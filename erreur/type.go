@@ -12,6 +12,10 @@ const (
 	// but not permitted to perform the attempted operation.
 	TypeAuthorization = "authorization_error"
 
+	TypeAuthzFailed = "authorization_failed"
+
+	TypeNotFound = "not_found"
+
 	// TypeInvalidParam indicates the request failed due to invalid
 	// or incorrectly formatted parameters. This error type signals
 	// that the client must modify the request before retrying—the
@@ -55,6 +59,12 @@ const (
 	// before or during request processing. Clients should refresh the
 	// resource before deciding whether another request is necessary.
 	TypeStateConflict = "state_conflict"
+
+	TypeStateInvalid = "state_invalid"
+
+	TypeDependencyFailed = "dependency_failed"
+
+	TypeServiceUnavailable = "service_unavailable"
 
 	// TypeUnknown indicates an unexpected failure that doesn't fit
 	// established error categories. These errors are typically logged

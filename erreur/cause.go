@@ -34,6 +34,8 @@ const (
 	// permissions don't include the attempted action.
 	CauseAuthzFailed = "authorization_failed"
 
+	CauseNotFound = "resource_not_found"
+
 	// CauseInvalidBody indicates the request body could not be read
 	// or decoded as the expected JSON payload.
 	CauseInvalidBody = "invalid_request_body"
@@ -57,6 +59,8 @@ const (
 	CausePreconditionUnmet = "precondition_unmet"
 
 	CauseStateConflict = "resource_state_conflict"
+
+	CauseStateInvalid = "resource_state_invalid"
 
 	// CauseIdempotencyConflict indicates an idempotency key was
 	// reused with a different operation payload.

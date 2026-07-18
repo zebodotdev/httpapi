@@ -38,8 +38,8 @@ func TestNotFoundClassifiesMissingResource(t *testing.T) {
 	if got.Status != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", got.Status, http.StatusNotFound)
 	}
-	if got.FixCode != FixCodeChangeParams {
-		t.Fatalf("fix_code = %q, want %q", got.FixCode, FixCodeChangeParams)
+	if got.FixCode != FixCodeRefreshState {
+		t.Fatalf("fix_code = %q, want %q", got.FixCode, FixCodeRefreshState)
 	}
 }
 

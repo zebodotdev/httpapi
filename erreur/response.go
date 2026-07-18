@@ -10,80 +10,139 @@ func ResponseStatus(err *Error) int {
 	return err.Status
 }
 
-func InvalidParam(code, message, detail string) *Error {
+func New(status int, code, message, cause, typ, fixCode string) *Error {
+	return WithDetail(status, code, message, "", cause, typ, fixCode)
+}
+
+func WithDetail(status int, code, message, detail, cause, typ, fixCode string) *Error {
 	return &Error{
 		Message: message,
-		FixCode: FixCodeChangeParams,
+		FixCode: fixCode,
 		Detail:  detail,
-		Status:  http.StatusBadRequest,
-		Cause:   CauseInvalidParam,
-		Type:    TypeInvalidParam,
+		Status:  status,
+		Cause:   cause,
+		Type:    typ,
 		Code:    code,
-		URL:     URL(code),
+		URL:     URLFor(code, typ, cause, fixCode),
 	}
+}
+
+func InvalidParam(code, message, detail string) *Error {
+	return WithDetail(
+		http.StatusBadRequest,
+		code,
+		message,
+		detail,
+		CauseInvalidParam,
+		TypeInvalidParam,
+		FixCodeChangeParams,
+	)
+}
+
+func Unauthorized(code, message, detail string) *Error {
+	return WithDetail(
+		http.StatusUnauthorized,
+		code,
+		message,
+		detail,
+		CauseAuthzFailed,
+		TypeAuthzFailed,
+		FixCodeUseValidAPIKey,
+	)
 }
 
 func NotFound(code, message, detail string) *Error {
-	return &Error{
-		Message: message,
-		FixCode: FixCodeChangeParams,
-		Detail:  detail,
-		Status:  http.StatusNotFound,
-		Cause:   CauseInvalidParam,
-		Type:    TypeInvalidParam,
-		Code:    code,
-		URL:     URL(code),
-	}
+	return WithDetail(
+		http.StatusNotFound,
+		code,
+		message,
+		detail,
+		CauseNotFound,
+		TypeNotFound,
+		FixCodeRefreshState,
+	)
 }
 
 func Precondition(code, message, detail string) *Error {
-	return &Error{
-		Message: message,
-		FixCode: FixCodeSatisfyPrecond,
-		Detail:  detail,
-		Status:  http.StatusBadRequest,
-		Cause:   CausePreconditionUnmet,
-		Type:    TypeBadRequest,
-		Code:    code,
-		URL:     URL(code),
-	}
+	return WithDetail(
+		http.StatusBadRequest,
+		code,
+		message,
+		detail,
+		CausePreconditionUnmet,
+		TypeBadRequest,
+		FixCodeSatisfyPrecond,
+	)
 }
 
 func Conflict(code, message, detail string) *Error {
-	return &Error{
-		Message: message,
-		FixCode: FixCodeRefreshState,
-		Detail:  detail,
-		Status:  http.StatusConflict,
-		Cause:   CauseStateConflict,
-		Type:    TypeStateConflict,
-		Code:    code,
-		URL:     URL(code),
-	}
+	return WithDetail(
+		http.StatusConflict,
+		code,
+		message,
+		detail,
+		CauseStateConflict,
+		TypeStateConflict,
+		FixCodeRefreshState,
+	)
+}
+
+func StateInvalid(status int, code, message, detail string) *Error {
+	return WithDetail(
+		status,
+		code,
+		message,
+		detail,
+		CauseStateInvalid,
+		TypeStateInvalid,
+		FixCodeRefreshState,
+	)
+}
+
+func StateConflict(code, message, detail string) *Error {
+	return WithDetail(
+		http.StatusConflict,
+		code,
+		message,
+		detail,
+		CauseStateConflict,
+		TypeStateConflict,
+		FixCodeRefreshState,
+	)
+}
+
+func ServiceUnavailable(code, message, detail string) *Error {
+	return WithDetail(
+		http.StatusServiceUnavailable,
+		code,
+		message,
+		detail,
+		CauseServiceUnavailable,
+		TypeServiceUnavailable,
+		FixCodeContactSupport,
+	)
 }
 
 func Transient(code, message, detail string) *Error {
-	return &Error{
-		Message: message,
-		FixCode: FixCodeRepeatSame,
-		Detail:  detail,
-		Status:  http.StatusServiceUnavailable,
-		Cause:   CauseServiceUnavailable,
-		Type:    TypeTransient,
-		Code:    code,
-		URL:     URL(code),
-	}
+	return WithDetail(
+		http.StatusServiceUnavailable,
+		code,
+		message,
+		detail,
+		CauseServiceUnavailable,
+		TypeTransient,
+		FixCodeRepeatSame,
+	)
 }
 
 func Unexpected() *Error {
-	return &Error{
-		Message: "request failed",
-		FixCode: FixCodeContactSupport,
-		Detail:  "we could not process this request. contact support with the request id if the problem persists.",
-		Status:  http.StatusInternalServerError,
-		Cause:   CauseUnknown,
-		Type:    TypeUnknown,
-		Code:    "request_failed",
-		URL:     URL("request_failed"),
-	}
+	return WithDetail(
+		http.StatusInternalServerError,
+		"request_failed",
+		"request failed",
+		"we could not process this request. contact support with the request id if the problem persists.",
+		CauseUnknown,
+		TypeUnknown,
+		FixCodeContactSupport,
+	)
 }

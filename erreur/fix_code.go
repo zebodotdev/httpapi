@@ -21,6 +21,10 @@ const (
 	// retry with credentials that are allowed to perform the operation.
 	FixCodeUseAuthorizedCredentials = "use_authorized_credentials"
 
+	// FixCodeUseValidAPIKey preserves the legacy API-key remediation code used
+	// by services that expose Bearer-token authentication.
+	FixCodeUseValidAPIKey = "use_valid_api_key"
+
 	// FixCodeContactSupport indicates the error requires manual
 	// intervention from support. This occurs for account-level
 	// issues, configuration problems, or edge cases that cannot be
