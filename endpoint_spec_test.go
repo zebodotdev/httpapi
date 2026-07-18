@@ -85,6 +85,12 @@ func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
 	if keys := endpoint.AuthKeys(); !keys["secret"] || keys["new"] {
 		t.Fatalf("auth keys were not cloned: %#v", keys)
 	}
+	keys := endpoint.AuthKeys()
+	keys["secret"] = false
+	keys["new"] = true
+	if keys := endpoint.AuthKeys(); !keys["secret"] || keys["new"] {
+		t.Fatalf("auth keys accessor exposed internal map: %#v", keys)
+	}
 }
 
 func TestDefineEndpointDefaults(t *testing.T) {

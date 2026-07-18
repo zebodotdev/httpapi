@@ -69,7 +69,7 @@ func (e Endpoint) Authorization() AuthorizationRequirement {
 func (e Endpoint) RequiresAuthorization() bool { return e.Authorization().Required }
 func (e Endpoint) RouteSpec() RouteSpec        { return e.routeSpec() }
 func (e Endpoint) Priority() EndpointPriority  { return e.priorityPolicy().priority }
-func (e Endpoint) AuthKeys() map[string]bool   { return e.authKeys }
+func (e Endpoint) AuthKeys() map[string]bool   { return cloneEndpointAuthKeys(e.authKeys) }
 
 // EndpointGroup groups endpoints together under one path
 // prefix. All endpoints in an EndpointGroup are usually

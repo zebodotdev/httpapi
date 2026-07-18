@@ -79,24 +79,25 @@ func (r *Req) partKey() string { return r.AppID }
 func (r Req) MarshalJSON() ([]byte, error) {
 	safeReq, safeh, reqURL := r.auditRequest()
 	bdy := auditBody(r.Body)
+	res := r.auditResponse()
 
 	return json.Marshal(struct {
-		URL                  string        `json:"url"`
-		AppID                string        `json:"application_id"`
-		SessID               string        `json:"session_id,omitempty"`
-		IdemKey              string        `json:"idempotency_key,omitzero"`
-		RecdAt               time.Time     `json:"received_at"`
-		Header               http.Header   `json:"header,omitempty"`
-		Req                  *RequestAudit `json:"request,omitempty"`
-		Body                 any           `json:"body,omitempty"`
-		Res                  *Res          `json:"response,omitempty"`
-		Err                  *e.Error      `json:"error,omitempty"`
-		Dur                  time.Duration `json:"duration"`
-		ID                   string        `json:"id"`
-		Auth                 AuthAudit     `json:"auth"`
-		AuthFailure          *AuthFailure  `json:"auth_failure,omitempty"`
-		AuthorizationFailure *AuthFailure  `json:"authorization_failure,omitempty"`
-		Session              *SessionAudit `json:"session,omitempty"`
+		URL                  string         `json:"url"`
+		AppID                string         `json:"application_id"`
+		SessID               string         `json:"session_id,omitempty"`
+		IdemKey              string         `json:"idempotency_key,omitzero"`
+		RecdAt               time.Time      `json:"received_at"`
+		Header               http.Header    `json:"header,omitempty"`
+		Req                  *RequestAudit  `json:"request,omitempty"`
+		Body                 any            `json:"body,omitempty"`
+		Res                  *ResponseAudit `json:"response,omitempty"`
+		Err                  *e.Error       `json:"error,omitempty"`
+		Dur                  time.Duration  `json:"duration"`
+		ID                   string         `json:"id"`
+		Auth                 AuthAudit      `json:"auth"`
+		AuthFailure          *AuthFailure   `json:"auth_failure,omitempty"`
+		AuthorizationFailure *AuthFailure   `json:"authorization_failure,omitempty"`
+		Session              *SessionAudit  `json:"session,omitempty"`
 	}{
 		URL:                  reqURL,
 		AppID:                r.AppID,
@@ -106,7 +107,7 @@ func (r Req) MarshalJSON() ([]byte, error) {
 		Body:                 bdy,
 		Header:               safeh,
 		Req:                  safeReq,
-		Res:                  r.Res,
+		Res:                  res,
 		Err:                  r.Err,
 		Dur:                  r.Dur,
 		ID:                   r.ID,
@@ -136,6 +137,15 @@ type RequestAudit struct {
 	Referer       string      `json:"referer,omitempty"`
 	Header        http.Header `json:"header,omitempty"`
 	QueryRedacted bool        `json:"query_redacted,omitempty"`
+}
+
+type ResponseAudit struct {
+	ContentType string      `json:"content_type,omitempty"`
+	Status      int         `json:"status,omitempty"`
+	SentAt      time.Time   `json:"sent_at,omitzero"`
+	Header      http.Header `json:"header,omitempty"`
+	BodyPresent bool        `json:"body_present,omitempty"`
+	Streamed    bool        `json:"streamed,omitempty"`
 }
 
 func (r Req) auditRequest() (*RequestAudit, http.Header, string) {
@@ -168,6 +178,21 @@ func (r Req) auditRequest() (*RequestAudit, http.Header, string) {
 	return audit, header, url
 }
 
+func (r Req) auditResponse() *ResponseAudit {
+	if r.Res == nil {
+		return nil
+	}
+
+	return &ResponseAudit{
+		ContentType: r.Res.ContentType,
+		Status:      r.Res.Status,
+		SentAt:      r.Res.SentAt,
+		Header:      auditResponseHeader(r.Res.Header),
+		BodyPresent: r.Res.Body != nil || r.Res.BodyReader != nil,
+		Streamed:    r.Res.BodyReader != nil,
+	}
+}
+
 func auditHeader(header http.Header) http.Header {
 	out := make(http.Header)
 	for _, key := range []string{
@@ -187,6 +212,25 @@ func auditHeader(header http.Header) http.Header {
 	redactHeader(out, header, "cookie")
 	redactHeader(out, header, "proxy-authorization")
 	redactHeader(out, header, "x-api-key")
+	return out
+}
+
+func auditResponseHeader(header http.Header) http.Header {
+	out := make(http.Header)
+	for _, key := range []string{
+		contentTypeHeaderKey,
+		"cache-control",
+		xReqIDHeaderKey,
+		xReqTimingHeaderKey,
+	} {
+		copyHeader(out, header, key)
+	}
+	for _, key := range []string{
+		"location",
+		"set-cookie",
+	} {
+		redactHeader(out, header, key)
+	}
 	return out
 }
 
@@ -243,6 +287,7 @@ func auditRawURLString(raw string) string {
 func auditURL(u url.URL) url.URL {
 	u.RawQuery = ""
 	u.ForceQuery = false
+	u.Fragment = ""
 	return u
 }
 
@@ -377,6 +422,10 @@ func genReqID() string {
 }
 
 func NewReq(req *http.Request) *Req {
+	if req.Body == nil {
+		req.Body = http.NoBody
+	}
+
 	body, err := io.ReadAll(req.Body)
 	if err != nil && err != io.EOF {
 		logr.Printf(
@@ -390,6 +439,7 @@ func NewReq(req *http.Request) *Req {
 
 		return nil
 	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
 
 	r := Req{
 		AppID:  unAuthzReqAppID,
