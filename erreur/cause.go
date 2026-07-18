@@ -88,6 +88,8 @@ const (
 	// temporarily unavailable.
 	CauseDependencyUnavailable = "dependency_unavailable"
 
+	CauseDependencyFailed = "dependency_failed"
+
 	// CauseProviderUnavailable indicates an external provider or
 	// processor is temporarily unavailable.
 	CauseProviderUnavailable = "provider_unavailable"
