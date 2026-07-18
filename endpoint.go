@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -25,6 +26,7 @@ const (
 
 	ApplicationJson           ContentType = "application/json"
 	ApplicationFormURLEncoded ContentType = "application/x-www-form-urlencoded"
+	MultipartFormData         ContentType = "multipart/form-data"
 	TextHTML                  ContentType = "text/html"
 	TextPlain                 ContentType = "text/plain; charset=utf-8"
 
@@ -322,6 +324,21 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 		}
 
 		req.Dur = time.Since(startedAt)
+		if req.Res.BodyReader != nil {
+			written, err := writeResponseStream(w, req, timeout)
+			if written > 0 {
+				responseSizeBytes = written
+			}
+			if err != nil {
+				logr.Printf(
+					"failed to write response stream:"+
+						" request_id=%s method=%s path=%s error=%v",
+					req.ID, req.Method(), req.Path(), err,
+				)
+			}
+			return
+		}
+
 		body, err := req.ResponseBody()
 		if err != nil {
 			logr.Printf(
@@ -407,6 +424,39 @@ func writeResponseBody(
 
 	req.Res.Header = rsh
 	return w.Write(body)
+}
+
+func writeResponseStream(
+	w http.ResponseWriter,
+	req *Req,
+	timeout EndpointTimeoutSpec,
+) (int, error) {
+	writeDeadlineSet := setEndpointWriteDeadline(w, req, timeout)
+	if writeDeadlineSet {
+		defer clearEndpointWriteDeadline(w, req)
+	}
+
+	rsh := w.Header()
+	for k, v := range req.Res.Header {
+		for _, hv := range v {
+			rsh.Add(k, hv)
+		}
+	}
+
+	rsh.Add(contentTypeHeaderKey, req.Res.ContentType)
+	rsh.Add(xReqTimingHeaderKey, req.Dur.String())
+	rsh.Add(xReqIDHeaderKey, req.ID)
+	rsh.Add(corsOriginHeaderKey, "*")
+	rsh.Add(corsMethodsHeaderKey, "*")
+	rsh.Add(corsHeadersHeaderKey, "*")
+	w.WriteHeader(req.Res.Status)
+
+	req.Res.Header = rsh
+	if closer, ok := req.Res.BodyReader.(io.Closer); ok {
+		defer closer.Close()
+	}
+	written, err := io.Copy(w, req.Res.BodyReader)
+	return int(written), err
 }
 
 func mustEncodeUnexpectedErr() []byte {

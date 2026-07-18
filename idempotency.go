@@ -193,7 +193,7 @@ func handleIdempotently(
 	logIdempotencyEvent("reserved", r, ireq.Scope, ireq.Key, ireq.Fingerprint, "", 0)
 	r.IdemKey = ireq.Key
 	handler(r)
-	if r.Res == nil || r.Res.Status < http.StatusOK || r.Res.Status > 299 {
+	if r.Res == nil || r.Res.Status < http.StatusOK || r.Res.Status > 299 || r.Res.BodyReader != nil {
 		status := 0
 		if r.Res != nil {
 			status = r.Res.Status

@@ -115,9 +115,12 @@ func authAuditType(r Req) string {
 	switch strings.ToLower(strings.TrimSpace(prefix)) {
 	case strings.ToLower(schemes.Bearer):
 		return authAuditTypeBearerKey
-	case strings.ToLower(schemes.Service):
-		return SessionAuthModeService
 	default:
+		for _, scheme := range schemes.ServiceAuthorizationSchemes() {
+			if strings.EqualFold(prefix, scheme) {
+				return SessionAuthModeService
+			}
+		}
 		return authTypeUnknown
 	}
 }

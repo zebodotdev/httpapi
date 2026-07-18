@@ -71,6 +71,7 @@ type Res struct {
 	SentAt      time.Time   `json:"sent_at"`
 	Header      http.Header `json:"header"`
 	Body        any         `json:"body"`
+	BodyReader  io.Reader   `json:"-"`
 }
 
 func (r *Req) partKey() string { return r.AppID }
@@ -316,6 +317,9 @@ func (r *Req) ResponseHeaders() *jsonb {
 }
 
 func (r *Req) ResponseBody() ([]byte, error) {
+	if r.Res.BodyReader != nil {
+		return nil, fmt.Errorf("httpapi: streamed response body cannot be buffered")
+	}
 	if r.Res.ContentType == TextHTML {
 		if body, ok := r.Res.Body.(string); ok {
 			return []byte(body), nil
@@ -394,6 +398,10 @@ func NewReq(req *http.Request) *Req {
 		Body:   body,
 		ID:     genReqID(),
 	}
+	if session := SessionFromContext(req.Context()); session != nil {
+		r.AttachSession(session)
+		return &r
+	}
 
 	auth := r.Authorization()
 	authScheme := strings.SplitN(auth, " ", 2)[0]
@@ -411,7 +419,7 @@ func NewReq(req *http.Request) *Req {
 				err,
 			)
 		}
-	case strings.ToLower(schemes.Service):
+	case serviceAuthorizationSchemeCase(schemes, authScheme):
 		if err := r.authenticate(authTypeService); err != nil {
 			r.recordAuthFailure(authTypeService, err)
 			logr.Printf(
@@ -430,4 +438,14 @@ func NewReq(req *http.Request) *Req {
 	}
 
 	return &r
+}
+
+func serviceAuthorizationSchemeCase(schemes AuthorizationSchemes, candidate string) string {
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+	for _, scheme := range schemes.ServiceAuthorizationSchemes() {
+		if candidate == strings.ToLower(scheme) {
+			return candidate
+		}
+	}
+	return "\x00"
 }

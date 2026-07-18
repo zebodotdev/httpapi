@@ -21,6 +21,8 @@ var (
 	ErrAuthzFailed                = errors.New("httpapi: api_auth_failed")
 )
 
+type sessionContextKey struct{}
+
 // App identifies the application a session belongs to.
 type App struct {
 	ID          string `json:"id"`
@@ -134,6 +136,37 @@ func currentAuthenticator() Authenticator {
 	return authenticatorState.authenticator
 }
 
+// ContextWithSession returns a child context carrying a pre-authenticated
+// session. Trusted middleware and tests can use it when authentication has
+// already happened before the request reaches an Endpoint.
+func ContextWithSession(ctx context.Context, session *Session) context.Context {
+	if session == nil {
+		return ctx
+	}
+
+	return context.WithValue(ctx, sessionContextKey{}, session)
+}
+
+// SessionFromContext returns a session previously installed by ContextWithSession.
+func SessionFromContext(ctx context.Context) *Session {
+	session, _ := ctx.Value(sessionContextKey{}).(*Session)
+	return session
+}
+
+// ContextWithAuthenticatedApp returns a context carrying a generic bearer
+// session for an application. It is primarily useful in tests.
+func ContextWithAuthenticatedApp(ctx context.Context, appID string) context.Context {
+	now := time.Now().UTC()
+	return ContextWithSession(ctx, &Session{
+		ID:          "sess_context",
+		App:         App{ID: appID},
+		InitiatedAt: now,
+		ExpiresAt:   now.Add(30 * time.Minute),
+		MultiUse:    true,
+		AuthMode:    SessionAuthModeBearer,
+	})
+}
+
 func (s *Session) valid() bool      { return !s.expired() }
 func (s *Session) authorized() bool { return s.valid() }
 func (s *Session) expired() bool {
@@ -172,7 +205,7 @@ func (r *Req) authenticate(authType string) error {
 	case authTypeBearer:
 		token, ok = authorizationToken(auth, currentAuthorizationSchemes().Bearer)
 	case authTypeService:
-		ok = authorizationValue(auth, currentAuthorizationSchemes().Service)
+		ok = serviceAuthorizationValue(auth, currentAuthorizationSchemes())
 	default:
 		return nil
 	}
@@ -215,6 +248,15 @@ func authorizationValue(auth, prefix string) bool {
 	return len(parts) == 2 &&
 		strings.EqualFold(parts[0], prefix) &&
 		strings.TrimSpace(parts[1]) != ""
+}
+
+func serviceAuthorizationValue(auth string, schemes AuthorizationSchemes) bool {
+	for _, scheme := range schemes.ServiceAuthorizationSchemes() {
+		if authorizationValue(auth, scheme) {
+			return true
+		}
+	}
+	return false
 }
 
 func authorizationScheme(auth string) string {
