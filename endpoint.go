@@ -10,25 +10,26 @@ import (
 	"os"
 	"time"
 
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	e "github.com/zebodotdev/httpapi/erreur"
 )
 
-type HttpMethod = string
-type ContentType = string
+type HttpMethod = endpointpkg.Method
+type ContentType = endpointpkg.ContentType
 type Handler func(r *Req)
 
 const (
 	APIRequestsTable = "api_requests"
 
-	OPTIONS HttpMethod = "OPTIONS"
-	POST    HttpMethod = "POST"
-	GET     HttpMethod = "GET"
+	OPTIONS HttpMethod = endpointpkg.OPTIONS
+	POST    HttpMethod = endpointpkg.POST
+	GET     HttpMethod = endpointpkg.GET
 
-	ApplicationJson           ContentType = "application/json"
-	ApplicationFormURLEncoded ContentType = "application/x-www-form-urlencoded"
-	MultipartFormData         ContentType = "multipart/form-data"
-	TextHTML                  ContentType = "text/html"
-	TextPlain                 ContentType = "text/plain; charset=utf-8"
+	ApplicationJson           ContentType = endpointpkg.ApplicationJson
+	ApplicationFormURLEncoded ContentType = endpointpkg.ApplicationFormURLEncoded
+	MultipartFormData         ContentType = endpointpkg.MultipartFormData
+	TextHTML                  ContentType = endpointpkg.TextHTML
+	TextPlain                 ContentType = endpointpkg.TextPlain
 
 	TAG = "[httpapi/endpoint]: "
 )

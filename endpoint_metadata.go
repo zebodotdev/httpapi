@@ -1,28 +1,22 @@
 package httpapi
 
-import (
-	"fmt"
-	"strings"
-)
+import authpkg "github.com/zebodotdev/httpapi/auth"
 
 // AuthorizationKind identifies the authorization scheme an endpoint requires.
-type AuthorizationKind string
+type AuthorizationKind = authpkg.AuthorizationKind
 
 const (
 	// AuthorizationKindAny accepts any authenticated session.
-	AuthorizationKindAny AuthorizationKind = "any"
+	AuthorizationKindAny AuthorizationKind = authpkg.AuthorizationKindAny
 	// AuthorizationKindBearer requires a bearer secret-key session.
-	AuthorizationKindBearer AuthorizationKind = authTypeBearer
+	AuthorizationKindBearer AuthorizationKind = authpkg.AuthorizationKindBearer
 	// AuthorizationKindService requires service authorization.
-	AuthorizationKindService AuthorizationKind = authTypeService
+	AuthorizationKindService AuthorizationKind = authpkg.AuthorizationKindService
 )
 
 // AuthorizationRequirement describes whether an endpoint requires auth and
 // which authorization kind satisfies that requirement.
-type AuthorizationRequirement struct {
-	Required bool              `json:"required" yaml:"required"`
-	Kind     AuthorizationKind `json:"kind,omitempty" yaml:"kind,omitempty"`
-}
+type AuthorizationRequirement = authpkg.AuthorizationRequirement
 
 type endpointAccessPolicy struct {
 	internal      bool
@@ -85,38 +79,15 @@ func (eg *EndpointGroup) RequireAuthorization(kind AuthorizationKind) {
 }
 
 func requiredAuthorization(kind AuthorizationKind) AuthorizationRequirement {
-	return normalizeAuthorizationRequirement(AuthorizationRequirement{
-		Required: true,
-		Kind:     kind,
-	})
+	return authpkg.RequiredAuthorization(kind)
 }
 
 func normalizeAuthorizationRequirement(auth AuthorizationRequirement) AuthorizationRequirement {
-	if !auth.Required {
-		return AuthorizationRequirement{}
-	}
-
-	auth.Kind = normalizeAuthorizationKind(auth.Kind)
-	if auth.Kind == "" {
-		panic("httpapi: authorization kind is required")
-	}
-
-	return auth
+	return authpkg.NormalizeAuthorizationRequirement(auth)
 }
 
 func normalizeAuthorizationKind(kind AuthorizationKind) AuthorizationKind {
-	switch strings.TrimSpace(strings.ToLower(string(kind))) {
-	case string(AuthorizationKindAny):
-		return AuthorizationKindAny
-	case string(AuthorizationKindBearer):
-		return AuthorizationKindBearer
-	case string(AuthorizationKindService):
-		return AuthorizationKindService
-	case "":
-		return ""
-	default:
-		panic(fmt.Sprintf("httpapi: unsupported authorization kind %q", kind))
-	}
+	return authpkg.NormalizeAuthorizationKind(kind)
 }
 
 func (eg EndpointGroup) endpointWithGroupMetadata(endpoint Endpoint) Endpoint {
@@ -144,7 +115,7 @@ func (eg EndpointGroup) endpointWithGroupMetadata(endpoint Endpoint) Endpoint {
 	}
 
 	endpoint.mutableTimeoutPolicy().inheritDefaults(eg.Timeout)
-	endpoint.route = endpoint.routeSpec().withDefaults(eg.Route)
+	endpoint.route = endpoint.routeSpec().WithDefaults(eg.Route)
 
 	return endpoint.withRebuiltHandler()
 }

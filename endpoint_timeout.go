@@ -3,9 +3,10 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
+
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 )
 
 // EndpointTimeoutSpec declares runtime timeout budgets for one endpoint.
@@ -13,11 +14,7 @@ import (
 // These budgets are enforced by the in-process HTTP wrapper. They are separate
 // from RouteBackend.Timeout, which only describes generated gateway/backend
 // deadlines for transcribed route specs.
-type EndpointTimeoutSpec struct {
-	ReadBody time.Duration
-	Handler  time.Duration
-	Write    time.Duration
-}
+type EndpointTimeoutSpec = endpointpkg.TimeoutSpec
 
 type endpointTimeoutPolicy struct {
 	timeout EndpointTimeoutSpec
@@ -83,26 +80,7 @@ func (p *endpointTimeoutPolicy) inheritDefaults(defaults EndpointTimeoutSpec) {
 }
 
 func normalizeEndpointTimeoutSpec(spec EndpointTimeoutSpec) EndpointTimeoutSpec {
-	if spec.ReadBody < 0 {
-		panic(fmt.Sprintf(
-			"httpapi: endpoint read body timeout cannot be negative: %s",
-			spec.ReadBody,
-		))
-	}
-	if spec.Handler < 0 {
-		panic(fmt.Sprintf(
-			"httpapi: endpoint handler timeout cannot be negative: %s",
-			spec.Handler,
-		))
-	}
-	if spec.Write < 0 {
-		panic(fmt.Sprintf(
-			"httpapi: endpoint write timeout cannot be negative: %s",
-			spec.Write,
-		))
-	}
-
-	return spec
+	return endpointpkg.NormalizeTimeoutSpec(spec)
 }
 
 func requestWithEndpointHandlerTimeout(

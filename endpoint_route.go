@@ -1,40 +1,24 @@
 package httpapi
 
-import (
-	"fmt"
-	"strings"
-	"time"
-)
+import endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 
 // RoutePathMode describes how a gateway should forward an incoming route path
 // to its backend.
-type RoutePathMode string
+type RoutePathMode = endpointpkg.RoutePathMode
 
 const (
 	// RoutePathModeAppend forwards the matched request path to the backend.
-	RoutePathModeAppend RoutePathMode = "append"
+	RoutePathModeAppend RoutePathMode = endpointpkg.RoutePathModeAppend
 	// RoutePathModeConstant forwards to the backend address without appending the
 	// matched request path.
-	RoutePathModeConstant RoutePathMode = "constant"
+	RoutePathModeConstant RoutePathMode = endpointpkg.RoutePathModeConstant
 )
 
 // RouteBackend identifies the upstream target for a transcribed endpoint.
-type RouteBackend struct {
-	Address  string        `json:"address,omitempty" yaml:"address,omitempty"`
-	PathMode RoutePathMode `json:"path_mode,omitempty" yaml:"path_mode,omitempty"`
-	// Timeout is intentionally a Go duration. Spec writers translate it into
-	// their target-specific backend timeout fields.
-	Timeout time.Duration `json:"-" yaml:"-"`
-}
+type RouteBackend = endpointpkg.RouteBackend
 
 // RouteSpec describes endpoint route metadata used by spec writers.
-type RouteSpec struct {
-	// OperationID identifies one endpoint operation. Group-level defaults do not
-	// inherit this value because operation IDs must remain unique.
-	OperationID string       `json:"operation_id,omitempty" yaml:"operation_id,omitempty"`
-	Summary     string       `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Backend     RouteBackend `json:"backend" yaml:"backend,omitempty"`
-}
+type RouteSpec = endpointpkg.RouteSpec
 
 // WithRouteSpec applies route metadata to an endpoint.
 func WithRouteSpec(spec RouteSpec) EndpointOption {
@@ -68,66 +52,14 @@ func (e Endpoint) routeSpec() RouteSpec {
 	return normalizeRouteSpec(e.route)
 }
 
-func (spec RouteSpec) withDefaults(defaults RouteSpec) RouteSpec {
-	defaults = normalizeRouteSpec(defaults)
-	spec = normalizeRouteSpec(spec)
-
-	merged := RouteSpec{OperationID: spec.OperationID}
-	if spec.Summary != "" {
-		merged.Summary = spec.Summary
-	} else {
-		merged.Summary = defaults.Summary
-	}
-	merged.Backend = spec.Backend.withDefaults(defaults.Backend)
-
-	return normalizeRouteSpec(merged)
-}
-
-func (backend RouteBackend) withDefaults(defaults RouteBackend) RouteBackend {
-	defaults = normalizeRouteBackend(defaults)
-	backend = normalizeRouteBackend(backend)
-
-	merged := defaults
-	if backend.Address != "" {
-		merged.Address = backend.Address
-	}
-	if backend.PathMode != "" {
-		merged.PathMode = backend.PathMode
-	}
-	if backend.Timeout != 0 {
-		merged.Timeout = backend.Timeout
-	}
-
-	return normalizeRouteBackend(merged)
-}
-
 func normalizeRouteSpec(spec RouteSpec) RouteSpec {
-	spec.OperationID = strings.TrimSpace(spec.OperationID)
-	spec.Summary = strings.TrimSpace(spec.Summary)
-	spec.Backend = normalizeRouteBackend(spec.Backend)
-
-	return spec
+	return endpointpkg.NormalizeRouteSpec(spec)
 }
 
 func normalizeRouteBackend(backend RouteBackend) RouteBackend {
-	backend.Address = strings.TrimSpace(backend.Address)
-	backend.PathMode = normalizeRoutePathMode(backend.PathMode)
-	if backend.Timeout < 0 {
-		panic(fmt.Sprintf("httpapi: route backend timeout cannot be negative: %s", backend.Timeout))
-	}
-
-	return backend
+	return endpointpkg.NormalizeRouteBackend(backend)
 }
 
 func normalizeRoutePathMode(mode RoutePathMode) RoutePathMode {
-	switch strings.TrimSpace(strings.ToLower(string(mode))) {
-	case "":
-		return ""
-	case string(RoutePathModeAppend):
-		return RoutePathModeAppend
-	case string(RoutePathModeConstant):
-		return RoutePathModeConstant
-	default:
-		panic(fmt.Sprintf("httpapi: unsupported route path mode %q", mode))
-	}
+	return endpointpkg.NormalizeRoutePathMode(mode)
 }

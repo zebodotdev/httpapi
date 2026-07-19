@@ -13,12 +13,13 @@ import (
 	"strings"
 	"time"
 
+	authpkg "github.com/zebodotdev/httpapi/auth"
 	e "github.com/zebodotdev/httpapi/erreur"
 )
 
 const (
-	authTypeBearer  = "bearer"
-	authTypeService = "service"
+	authTypeBearer  = authpkg.TypeBearer
+	authTypeService = authpkg.TypeService
 	unAuthzReqAppID = "UNAUTHORIZED_REQUEST"
 
 	// intentionally case-insensitive. we're accessing
@@ -314,7 +315,7 @@ func (r *Req) DownstreamAuthorization() string {
 		return ""
 	}
 
-	if r.Sess != nil && r.Sess.serviceSession() {
+	if r.Sess != nil && r.Sess.ServiceSession() {
 		token := strings.TrimSpace(r.Sess.Token)
 		if token == "" {
 			return ""

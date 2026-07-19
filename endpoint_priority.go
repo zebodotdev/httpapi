@@ -1,18 +1,15 @@
 package httpapi
 
-import (
-	"fmt"
-	"strings"
-)
+import endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 
 // EndpointPriority captures how important an endpoint is to service operations.
-type EndpointPriority string
+type EndpointPriority = endpointpkg.Priority
 
 const (
-	EndpointPriorityCritical EndpointPriority = "critical"
-	EndpointPriorityHigh     EndpointPriority = "high"
-	EndpointPriorityStandard EndpointPriority = "standard"
-	EndpointPriorityLow      EndpointPriority = "low"
+	EndpointPriorityCritical EndpointPriority = endpointpkg.PriorityCritical
+	EndpointPriorityHigh     EndpointPriority = endpointpkg.PriorityHigh
+	EndpointPriorityStandard EndpointPriority = endpointpkg.PriorityStandard
+	EndpointPriorityLow      EndpointPriority = endpointpkg.PriorityLow
 )
 
 type endpointPriorityPolicy struct {
@@ -44,29 +41,11 @@ func (eg *EndpointGroup) SetPriority(priority EndpointPriority) {
 }
 
 func requiredEndpointPriority(priority EndpointPriority) EndpointPriority {
-	priority = normalizeEndpointPriority(priority)
-	if priority == "" {
-		panic("httpapi: endpoint priority is required")
-	}
-
-	return priority
+	return endpointpkg.RequiredPriority(priority)
 }
 
 func normalizeEndpointPriority(priority EndpointPriority) EndpointPriority {
-	switch strings.TrimSpace(strings.ToLower(string(priority))) {
-	case "":
-		return ""
-	case string(EndpointPriorityCritical):
-		return EndpointPriorityCritical
-	case string(EndpointPriorityHigh):
-		return EndpointPriorityHigh
-	case string(EndpointPriorityStandard):
-		return EndpointPriorityStandard
-	case string(EndpointPriorityLow):
-		return EndpointPriorityLow
-	default:
-		panic(fmt.Sprintf("httpapi: unsupported endpoint priority %q", priority))
-	}
+	return endpointpkg.NormalizePriority(priority)
 }
 
 func (e Endpoint) priorityPolicy() endpointPriorityPolicy {

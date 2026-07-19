@@ -8,20 +8,22 @@ import (
 	"time"
 
 	httpapi "github.com/zebodotdev/httpapi"
+	authpkg "github.com/zebodotdev/httpapi/auth"
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 )
 
-type ContentType = httpapi.ContentType
-type HttpMethod = httpapi.HttpMethod
-type RouteBackend = httpapi.RouteBackend
-type RoutePathMode = httpapi.RoutePathMode
+type ContentType = endpointpkg.ContentType
+type HttpMethod = endpointpkg.Method
+type RouteBackend = endpointpkg.RouteBackend
+type RoutePathMode = endpointpkg.RoutePathMode
 
 const (
-	GET             HttpMethod  = httpapi.GET
-	POST            HttpMethod  = httpapi.POST
-	ApplicationJson ContentType = httpapi.ApplicationJson
+	GET             HttpMethod  = endpointpkg.GET
+	POST            HttpMethod  = endpointpkg.POST
+	ApplicationJson ContentType = endpointpkg.ApplicationJson
 
-	RoutePathModeAppend   RoutePathMode = httpapi.RoutePathModeAppend
-	RoutePathModeConstant RoutePathMode = httpapi.RoutePathModeConstant
+	RoutePathModeAppend   RoutePathMode = endpointpkg.RoutePathModeAppend
+	RoutePathModeConstant RoutePathMode = endpointpkg.RoutePathModeConstant
 
 	defaultOpenAPIDocumentSpecVersion    = "3.1.1"
 	defaultGCPGatewayDocumentSpecVersion = "2.0"
@@ -180,8 +182,8 @@ type OpenAPIOperation struct {
 	Produces              []string                          `json:"produces,omitempty" yaml:"produces,omitempty"`
 	XGoogleBackend        *GCPGatewayBackend                `json:"x-google-backend,omitempty" yaml:"x-google-backend,omitempty"`
 	XHTTPAPIInternal      bool                              `json:"x-httpapi-internal,omitempty" yaml:"x-httpapi-internal,omitempty"`
-	XHTTPAPIAuthorization *httpapi.AuthorizationRequirement `json:"x-httpapi-authorization,omitempty" yaml:"x-httpapi-authorization,omitempty"`
-	XHTTPAPIPriority      httpapi.EndpointPriority          `json:"x-httpapi-priority,omitempty" yaml:"x-httpapi-priority,omitempty"`
+	XHTTPAPIAuthorization *authpkg.AuthorizationRequirement `json:"x-httpapi-authorization,omitempty" yaml:"x-httpapi-authorization,omitempty"`
+	XHTTPAPIPriority      endpointpkg.Priority              `json:"x-httpapi-priority,omitempty" yaml:"x-httpapi-priority,omitempty"`
 	Responses             map[string]OpenAPIResponse        `json:"responses" yaml:"responses"`
 }
 
@@ -443,16 +445,16 @@ func openAPIOperation(
 		return operation, nil
 	case OpenAPITranscriptionModeGCPGateway:
 		backend, err := gcpGatewayBackend(
-			routeBackendWithDefaults(route.Backend, httpapi.RouteBackend{
+			routeBackendWithDefaults(route.Backend, RouteBackend{
 				Address:  cfg.GatewayBackendAddress,
-				PathMode: httpapi.RoutePathModeAppend,
+				PathMode: RoutePathModeAppend,
 			}),
 		)
 		if err != nil {
 			return OpenAPIOperation{}, err
 		}
 		operation.Consumes = contentTypesForOpenAPI(e.AcceptedContentTypes())
-		operation.Produces = []string{httpapi.ApplicationJson}
+		operation.Produces = []string{ApplicationJson}
 		operation.XGoogleBackend = &backend
 		return operation, nil
 	default:
@@ -473,45 +475,15 @@ func contentTypesForOpenAPI(contentTypes []ContentType) []string {
 }
 
 func normalizeContentTypes(contentTypes []ContentType) []ContentType {
-	if len(contentTypes) == 0 {
-		return []ContentType{ApplicationJson}
-	}
-
-	normalized := make([]ContentType, 0, len(contentTypes))
-	seen := map[ContentType]bool{}
-	for _, contentType := range contentTypes {
-		contentType = ContentType(strings.TrimSpace(string(contentType)))
-		if contentType == "" {
-			contentType = ApplicationJson
-		}
-		if seen[contentType] {
-			continue
-		}
-		seen[contentType] = true
-		normalized = append(normalized, contentType)
-	}
-	return normalized
+	return endpointpkg.NormalizeContentTypeSlice(contentTypes)
 }
 
 func routeBackendWithDefaults(backend, defaults RouteBackend) RouteBackend {
-	backend = normalizeRouteBackend(backend)
-	defaults = normalizeRouteBackend(defaults)
-
-	merged := defaults
-	if backend.Address != "" {
-		merged.Address = backend.Address
-	}
-	if backend.PathMode != "" {
-		merged.PathMode = backend.PathMode
-	}
-	if backend.Timeout != 0 {
-		merged.Timeout = backend.Timeout
-	}
-	return normalizeRouteBackend(merged)
+	return backend.WithDefaults(defaults)
 }
 
 func gcpGatewayBackend(backend RouteBackend) (GCPGatewayBackend, error) {
-	backend = normalizeRouteBackend(backend)
+	backend = endpointpkg.NormalizeRouteBackend(backend)
 	if backend.Address == "" {
 		return GCPGatewayBackend{}, ErrGCPGatewayBackendAddressRequired
 	}
@@ -556,28 +528,6 @@ func gcpGatewayBackendDeadline(backend RouteBackend) (*float64, error) {
 
 	seconds := backend.Timeout.Seconds()
 	return &seconds, nil
-}
-
-func normalizeRouteBackend(backend RouteBackend) RouteBackend {
-	backend.Address = strings.TrimSpace(backend.Address)
-	backend.PathMode = normalizeRoutePathMode(backend.PathMode)
-	if backend.Timeout < 0 {
-		panic(fmt.Sprintf("httpapi: route backend timeout cannot be negative: %s", backend.Timeout))
-	}
-	return backend
-}
-
-func normalizeRoutePathMode(mode RoutePathMode) RoutePathMode {
-	switch strings.TrimSpace(strings.ToLower(string(mode))) {
-	case "":
-		return ""
-	case string(RoutePathModeAppend):
-		return RoutePathModeAppend
-	case string(RoutePathModeConstant):
-		return RoutePathModeConstant
-	default:
-		panic(fmt.Sprintf("httpapi: unsupported route path mode %q", mode))
-	}
 }
 
 func openAPIConfig(opts []OpenAPITranscriptionOption) openAPITranscriptionConfig {

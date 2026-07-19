@@ -1,10 +1,6 @@
 package httpapi
 
-import (
-	"fmt"
-	"maps"
-	"strings"
-)
+import endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 
 // EndpointSpec is the declarative contract for one HTTP endpoint.
 //
@@ -84,89 +80,31 @@ func defineEndpointWithOptions(spec EndpointSpec, opts ...EndpointOption) Endpoi
 }
 
 func normalizeEndpointMethod(method HttpMethod) HttpMethod {
-	normalized := HttpMethod(strings.ToUpper(strings.TrimSpace(string(method))))
-	switch normalized {
-	case POST, GET:
-		return normalized
-	default:
-		panic(
-			"invalid method for this http endpoint." +
-				" supported methods are `GET` and `POST`",
-		)
-	}
+	return endpointpkg.NormalizeMethod(method)
 }
 
 func normalizeEndpointContentType(contentType ContentType) ContentType {
-	contentType = ContentType(strings.TrimSpace(string(contentType)))
-	if contentType == "" {
-		return ApplicationJson
-	}
-
-	return contentType
+	return endpointpkg.NormalizeContentType(contentType)
 }
 
 func normalizeEndpointContentTypes(primary ContentType, additional ...ContentType) []ContentType {
-	var contentTypes []ContentType
-	seen := map[ContentType]bool{}
-	if strings.TrimSpace(string(primary)) != "" || len(additional) == 0 {
-		contentType := normalizeEndpointContentType(primary)
-		contentTypes = append(contentTypes, contentType)
-		seen[contentType] = true
-	}
-	for _, contentType := range additional {
-		contentType = normalizeEndpointContentType(contentType)
-		if seen[contentType] {
-			continue
-		}
-		seen[contentType] = true
-		contentTypes = append(contentTypes, contentType)
-	}
-
-	return contentTypes
+	return endpointpkg.NormalizeContentTypes(primary, additional...)
 }
 
 func normalizeEndpointContentTypeSlice(contentTypes []ContentType) []ContentType {
-	if len(contentTypes) == 0 {
-		return []ContentType{ApplicationJson}
-	}
-
-	normalized := make([]ContentType, 0, len(contentTypes))
-	seen := map[ContentType]bool{}
-	for _, contentType := range contentTypes {
-		contentType = normalizeEndpointContentType(contentType)
-		if seen[contentType] {
-			continue
-		}
-		seen[contentType] = true
-		normalized = append(normalized, contentType)
-	}
-	return normalized
+	return endpointpkg.NormalizeContentTypeSlice(contentTypes)
 }
 
 func primaryContentType(contentTypes []ContentType) ContentType {
-	if len(contentTypes) == 0 {
-		return ApplicationJson
-	}
-	return normalizeEndpointContentType(contentTypes[0])
+	return endpointpkg.PrimaryContentType(contentTypes)
 }
 
 func cloneContentTypes(contentTypes []ContentType) []ContentType {
-	if len(contentTypes) == 0 {
-		return nil
-	}
-	return append([]ContentType(nil), contentTypes...)
+	return endpointpkg.CloneContentTypes(contentTypes)
 }
 
 func joinContentTypes(contentTypes []ContentType) string {
-	if len(contentTypes) == 0 {
-		return string(ApplicationJson)
-	}
-
-	parts := make([]string, 0, len(contentTypes))
-	for _, contentType := range contentTypes {
-		parts = append(parts, string(normalizeEndpointContentType(contentType)))
-	}
-	return strings.Join(parts, ", ")
+	return endpointpkg.JoinContentTypes(contentTypes)
 }
 
 // WithAcceptedContentTypes sets every accepted request content type.
@@ -178,24 +116,9 @@ func WithAcceptedContentTypes(contentTypes ...ContentType) EndpointOption {
 }
 
 func cloneEndpointAuthKeys(keys map[string]bool) map[string]bool {
-	if len(keys) == 0 {
-		return nil
-	}
-
-	cloned := make(map[string]bool, len(keys))
-	maps.Copy(cloned, keys)
-
-	return cloned
+	return endpointpkg.CloneAuthKeys(keys)
 }
 
 func validateEndpointContentType(actual ContentType, expected []ContentType) error {
-	actual = normalizeEndpointContentType(actual)
-	expected = normalizeEndpointContentTypeSlice(expected)
-	for _, candidate := range expected {
-		if strings.Contains(string(actual), string(candidate)) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("httpapi: content type %q does not match any of %q", actual, joinContentTypes(expected))
+	return endpointpkg.ValidateContentType(actual, expected)
 }

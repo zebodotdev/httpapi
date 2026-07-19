@@ -3,6 +3,7 @@ package httpapi
 import (
 	"fmt"
 
+	authpkg "github.com/zebodotdev/httpapi/auth"
 	errresp "github.com/zebodotdev/httpapi/erreur"
 )
 
@@ -78,23 +79,10 @@ func recordEndpointAccessFailure(r *Req, err *errresp.Error) {
 func internalServiceRequest(r *Req) bool {
 	return r != nil &&
 		r.Sess != nil &&
-		r.Sess.authorized() &&
-		r.Sess.serviceSession()
+		r.Sess.Authorized() &&
+		r.Sess.ServiceSession()
 }
 
 func sessionSatisfiesAuthorization(s *Session, kind AuthorizationKind) bool {
-	if s == nil || !s.authorized() {
-		return false
-	}
-
-	switch normalizeAuthorizationKind(kind) {
-	case AuthorizationKindAny:
-		return true
-	case AuthorizationKindBearer:
-		return !s.serviceScoped()
-	case AuthorizationKindService:
-		return s.serviceSession()
-	default:
-		return false
-	}
+	return authpkg.SessionSatisfiesAuthorization(s, kind)
 }
