@@ -68,7 +68,7 @@ func recordEndpointAccessFailure(r *Req, err *errresp.Error) {
 		return
 	}
 
-	r.recordAuthorizationFailure(AuthFailure{
+	r.RecordAuthorizationFailure(AuthFailure{
 		Type:    authAuditTypeEndpoint,
 		Code:    err.Code,
 		Message: err.Message,

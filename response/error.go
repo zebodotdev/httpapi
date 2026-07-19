@@ -1,4 +1,4 @@
-package httpapi
+package response
 
 import (
 	"net/http"
@@ -11,7 +11,10 @@ type ErrRes struct {
 	Err *e.Error `json:"error"`
 }
 
-func RenderErr(r *Req, err *e.Error) {
+func RenderErr(r Target, err *e.Error) {
+	if r == nil {
+		return
+	}
 	if err == nil {
 		err = e.Unexpected()
 	}
@@ -28,17 +31,17 @@ func RenderErr(r *Req, err *e.Error) {
 		)
 	}
 
-	r.Res = &Res{
+	r.SetResponse(&Res{
 		ContentType: ApplicationJson,
 		Status:      status,
 		SentAt:      time.Now(),
 		Body: ErrRes{
 			Err: &bodyErr,
 		},
-	}
+	})
 }
 
-func RenderParamErr(r *Req, err *e.ErrInvalidParam) {
+func RenderParamErr(r Target, err *e.ErrInvalidParam) {
 	status := err.Status
 	if status == 0 {
 		status = http.StatusBadRequest

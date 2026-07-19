@@ -1,27 +1,32 @@
-package httpapi
+package request
 
-import (
-	authpkg "github.com/zebodotdev/httpapi/auth"
-	requestpkg "github.com/zebodotdev/httpapi/request"
-)
+import authpkg "github.com/zebodotdev/httpapi/auth"
 
 const (
 	defaultBearerAuthorizationScheme  = authpkg.DefaultBearerAuthorizationScheme
 	defaultServiceAuthorizationScheme = authpkg.DefaultServiceAuthorizationScheme
 )
 
-type AuthorizationSchemes = requestpkg.AuthorizationSchemes
+type AuthorizationSchemes = authpkg.AuthorizationSchemes
 
 // ConfigureAuthorizationSchemes sets the Authorization header schemes used by
 // NewReq when deciding which authenticator mode to invoke.
 func ConfigureAuthorizationSchemes(schemes AuthorizationSchemes) func() {
-	return requestpkg.ConfigureAuthorizationSchemes(schemes)
+	return authpkg.ConfigureAuthorizationSchemes(schemes)
 }
 
 func currentAuthorizationSchemes() AuthorizationSchemes {
-	return requestpkg.CurrentAuthorizationSchemes()
+	return authpkg.CurrentAuthorizationSchemes()
+}
+
+func CurrentAuthorizationSchemes() AuthorizationSchemes {
+	return currentAuthorizationSchemes()
 }
 
 func normalizeAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSchemes {
-	return requestpkg.NormalizeAuthorizationSchemes(schemes)
+	return authpkg.NormalizeAuthorizationSchemes(schemes)
+}
+
+func NormalizeAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSchemes {
+	return normalizeAuthorizationSchemes(schemes)
 }

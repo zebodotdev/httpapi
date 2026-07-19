@@ -8,7 +8,8 @@ The package owns:
 
 - endpoint definitions with `DefineEndpoint(EndpointSpec{...})`,
 - endpoint groups and mounting,
-- request and response wrapping,
+- request parsing/audit via `github.com/zebodotdev/httpapi/request`,
+- response rendering/writing via `github.com/zebodotdev/httpapi/response`,
 - auth/internal/priority/route/timeout metadata,
 - endpoint access enforcement,
 - idempotency orchestration,
@@ -123,6 +124,20 @@ Public OpenAPI 3.1 generation uses
 `github.com/zebodotdev/httpapi/openapi/openapi31`. GCP API Gateway generation
 uses `github.com/zebodotdev/httpapi/openapi/gcpapigateway`. Shared document
 shapes live in `github.com/zebodotdev/httpapi/openapi/spec`.
+
+## Package Boundaries
+
+The root package remains a compatibility facade for common imports. New package
+boundaries should follow ownership:
+
+- `endpoint` contains endpoint contract primitives such as method, content
+  types, route metadata, priority, and timeout specs.
+- `request` contains `Req`, request parsing, auth attachment, and audit-safe
+  request serialization.
+- `response` contains `Res`, render helpers, response encoding, streaming, and
+  HTTP response writing.
+- Root `httpapi` wires these together into the endpoint runtime and re-exports
+  common types while callers migrate gradually.
 
 ## Extraction Boundary
 
