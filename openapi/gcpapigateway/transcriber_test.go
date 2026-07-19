@@ -8,6 +8,7 @@ import (
 	"time"
 
 	httpapi "github.com/zebodotdev/httpapi"
+	"github.com/zebodotdev/httpapi/openapi/spec"
 )
 
 func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
@@ -33,14 +34,12 @@ func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 	if operation == nil {
 		t.Fatal("post operation missing")
 	}
-	if operation.XGoogleBackend == nil {
-		t.Fatal("x-google-backend missing")
+	backend := operationBackend(t, *operation)
+	if backend.Address != "https://service.example.internal" {
+		t.Fatalf("backend address = %q", backend.Address)
 	}
-	if operation.XGoogleBackend.Address != "https://service.example.internal" {
-		t.Fatalf("backend address = %q", operation.XGoogleBackend.Address)
-	}
-	if operation.XGoogleBackend.PathTranslation != PathTranslationAppend {
-		t.Fatalf("path translation = %q", operation.XGoogleBackend.PathTranslation)
+	if backend.PathTranslation != PathTranslationAppend {
+		t.Fatalf("path translation = %q", backend.PathTranslation)
 	}
 	if len(operation.Consumes) != 1 || operation.Consumes[0] != httpapi.ApplicationJson {
 		t.Fatalf("consumes = %#v, want application/json", operation.Consumes)
@@ -116,16 +115,16 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 	if createOperation.OperationID == "orders_group" {
 		t.Fatal("group operation id was inherited by endpoint")
 	}
-	if createOperation.XGoogleBackend == nil ||
-		createOperation.XGoogleBackend.Address != "https://tasks.example.internal" {
-		t.Fatalf("create backend = %#v", createOperation.XGoogleBackend)
+	createBackend := operationBackend(t, *createOperation)
+	if createBackend.Address != "https://tasks.example.internal" {
+		t.Fatalf("create backend = %#v", createBackend)
 	}
-	if createOperation.XGoogleBackend.PathTranslation != PathTranslationAppend {
-		t.Fatalf("create path translation = %q", createOperation.XGoogleBackend.PathTranslation)
+	if createBackend.PathTranslation != PathTranslationAppend {
+		t.Fatalf("create path translation = %q", createBackend.PathTranslation)
 	}
-	if createOperation.XGoogleBackend.Deadline == nil ||
-		*createOperation.XGoogleBackend.Deadline != 20 {
-		t.Fatalf("create deadline = %#v, want 20", createOperation.XGoogleBackend.Deadline)
+	if createBackend.Deadline == nil ||
+		*createBackend.Deadline != 20 {
+		t.Fatalf("create deadline = %#v, want 20", createBackend.Deadline)
 	}
 
 	lookupOperation := paths["/orders/lookup"].Post
@@ -138,16 +137,16 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 	if lookupOperation.Summary != "Orders endpoint" {
 		t.Fatalf("lookup summary = %q", lookupOperation.Summary)
 	}
-	if lookupOperation.XGoogleBackend == nil ||
-		lookupOperation.XGoogleBackend.Address != "https://lookup.example.internal" {
-		t.Fatalf("lookup backend = %#v", lookupOperation.XGoogleBackend)
+	lookupBackend := operationBackend(t, *lookupOperation)
+	if lookupBackend.Address != "https://lookup.example.internal" {
+		t.Fatalf("lookup backend = %#v", lookupBackend)
 	}
-	if lookupOperation.XGoogleBackend.PathTranslation != PathTranslationConstant {
-		t.Fatalf("lookup path translation = %q", lookupOperation.XGoogleBackend.PathTranslation)
+	if lookupBackend.PathTranslation != PathTranslationConstant {
+		t.Fatalf("lookup path translation = %q", lookupBackend.PathTranslation)
 	}
-	if lookupOperation.XGoogleBackend.Deadline == nil ||
-		*lookupOperation.XGoogleBackend.Deadline != 45 {
-		t.Fatalf("lookup deadline = %#v, want 45", lookupOperation.XGoogleBackend.Deadline)
+	if lookupBackend.Deadline == nil ||
+		*lookupBackend.Deadline != 45 {
+		t.Fatalf("lookup deadline = %#v, want 45", lookupBackend.Deadline)
 	}
 }
 
@@ -203,7 +202,7 @@ func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
 	if len(doc.Produces) != 1 || doc.Produces[0] != httpapi.ApplicationJson {
 		t.Fatalf("produces = %#v", doc.Produces)
 	}
-	if doc.Paths["/orders/new"].Post.XGoogleBackend == nil {
+	if operationBackend(t, *doc.Paths["/orders/new"].Post) == (Backend{}) {
 		t.Fatal("gateway backend missing from document operation")
 	}
 }
@@ -223,3 +222,18 @@ func TestTranscribeDocumentRequiresVersion(t *testing.T) {
 }
 
 func noopGCPGatewayHandler(*httpapi.Req) {}
+
+func operationBackend(t *testing.T, operation spec.Operation) Backend {
+	t.Helper()
+
+	value, ok := operation.Extension(BackendExtensionName)
+	if !ok {
+		t.Fatal("x-google-backend missing")
+	}
+	backend, ok := value.(Backend)
+	if !ok {
+		t.Fatalf("x-google-backend type = %T, want Backend", value)
+	}
+
+	return backend
+}

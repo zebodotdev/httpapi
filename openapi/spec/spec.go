@@ -1,10 +1,17 @@
 package spec
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	authpkg "github.com/zebodotdev/httpapi/auth"
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
+)
+
+var ErrInvalidExtensionName = errors.New(
+	"openapi/spec: extension name must begin with x-",
 )
 
 // Document is the document-level schema produced from endpoints.
@@ -46,23 +53,60 @@ type Operation struct {
 	Summary               string                            `json:"summary,omitempty" yaml:"summary,omitempty"`
 	Consumes              []string                          `json:"consumes,omitempty" yaml:"consumes,omitempty"`
 	Produces              []string                          `json:"produces,omitempty" yaml:"produces,omitempty"`
-	XGoogleBackend        *GCPGatewayBackend                `json:"x-google-backend,omitempty" yaml:"x-google-backend,omitempty"`
 	XHTTPAPIInternal      bool                              `json:"x-httpapi-internal,omitempty" yaml:"x-httpapi-internal,omitempty"`
 	XHTTPAPIAuthorization *authpkg.AuthorizationRequirement `json:"x-httpapi-authorization,omitempty" yaml:"x-httpapi-authorization,omitempty"`
 	XHTTPAPIPriority      endpointpkg.Priority              `json:"x-httpapi-priority,omitempty" yaml:"x-httpapi-priority,omitempty"`
+	Extensions            Extensions                        `json:"-" yaml:"-"`
 	Responses             map[string]Response               `json:"responses" yaml:"responses"`
-}
-
-// GCPGatewayBackend is the GCP API Gateway x-google-backend extension.
-type GCPGatewayBackend struct {
-	Address         string   `json:"address,omitempty" yaml:"address,omitempty"`
-	PathTranslation string   `json:"path_translation,omitempty" yaml:"path_translation,omitempty"`
-	Deadline        *float64 `json:"deadline,omitempty" yaml:"deadline,omitempty"`
 }
 
 // Response is the minimal OpenAPI response object.
 type Response struct {
 	Description string `json:"description" yaml:"description"`
+}
+
+// Extensions contains OpenAPI Specification Extensions for an object.
+type Extensions map[string]any
+
+// SetExtension sets an OpenAPI Specification Extension on the operation.
+func (operation *Operation) SetExtension(name string, value any) error {
+	name = normalizeExtensionName(name)
+	if err := validateExtensionName(name); err != nil {
+		return err
+	}
+
+	if operation.Extensions == nil {
+		operation.Extensions = Extensions{}
+	}
+	operation.Extensions[name] = value
+
+	return nil
+}
+
+// Extension returns one OpenAPI Specification Extension value.
+func (operation Operation) Extension(name string) (any, bool) {
+	name = normalizeExtensionName(name)
+	if operation.Extensions == nil {
+		return nil, false
+	}
+
+	value, ok := operation.Extensions[name]
+	return value, ok
+}
+
+// MarshalJSON emits operation extensions inline, as required by OpenAPI.
+func (operation Operation) MarshalJSON() ([]byte, error) {
+	object, err := operation.object()
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(object)
+}
+
+// MarshalYAML emits operation extensions inline, as required by OpenAPI.
+func (operation Operation) MarshalYAML() (any, error) {
+	return operation.object()
 }
 
 // AddOperation adds an operation to the given path and method.
@@ -126,6 +170,54 @@ func (p *PathItem) Merge(other PathItem) error {
 			return fmt.Errorf("duplicate %s operation", endpointpkg.POST)
 		}
 		p.Post = other.Post
+	}
+
+	return nil
+}
+
+func (operation Operation) object() (map[string]any, error) {
+	object := map[string]any{
+		"responses": operation.Responses,
+	}
+	if operation.OperationID != "" {
+		object["operationId"] = operation.OperationID
+	}
+	if operation.Summary != "" {
+		object["summary"] = operation.Summary
+	}
+	if len(operation.Consumes) > 0 {
+		object["consumes"] = operation.Consumes
+	}
+	if len(operation.Produces) > 0 {
+		object["produces"] = operation.Produces
+	}
+	if operation.XHTTPAPIInternal {
+		object["x-httpapi-internal"] = operation.XHTTPAPIInternal
+	}
+	if operation.XHTTPAPIAuthorization != nil {
+		object["x-httpapi-authorization"] = operation.XHTTPAPIAuthorization
+	}
+	if operation.XHTTPAPIPriority != "" {
+		object["x-httpapi-priority"] = operation.XHTTPAPIPriority
+	}
+	for name, value := range operation.Extensions {
+		name = normalizeExtensionName(name)
+		if err := validateExtensionName(name); err != nil {
+			return nil, err
+		}
+		object[name] = value
+	}
+
+	return object, nil
+}
+
+func normalizeExtensionName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func validateExtensionName(name string) error {
+	if !strings.HasPrefix(strings.ToLower(name), "x-") {
+		return fmt.Errorf("%w: %q", ErrInvalidExtensionName, name)
 	}
 
 	return nil

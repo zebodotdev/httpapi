@@ -61,13 +61,12 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 	if operation.XHTTPAPIPriority != httpapi.EndpointPriorityHigh {
 		t.Fatalf("priority = %q", operation.XHTTPAPIPriority)
 	}
-	if operation.XGoogleBackend != nil {
-		t.Fatal("public operation emitted x-google-backend")
-	}
-
 	encoded, err := json.Marshal(paths)
 	if err != nil {
 		t.Fatalf("json marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), `"x-google-backend"`) {
+		t.Fatalf("public openapi operation emitted x-google-backend: %s", encoded)
 	}
 	if strings.Contains(string(encoded), `"consumes"`) {
 		t.Fatalf("public operation emitted consumes: %s", encoded)

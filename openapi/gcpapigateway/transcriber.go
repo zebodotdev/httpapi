@@ -16,6 +16,7 @@ const (
 	DefaultDocumentTitle           = "http api"
 	DefaultDocumentDescription     = "machine-readable representation of the http api"
 	DefaultScheme                  = "https"
+	BackendExtensionName           = "x-google-backend"
 	PathTranslationAppend          = "APPEND_PATH_TO_ADDRESS"
 	PathTranslationConstant        = "CONSTANT_ADDRESS"
 	BackendDeadlineMax             = 600 * time.Second
@@ -42,6 +43,13 @@ type Transcriber struct {
 	Version        string
 	Host           string
 	BackendAddress string
+}
+
+// Backend is the GCP API Gateway backend extension payload.
+type Backend struct {
+	Address         string   `json:"address,omitempty" yaml:"address,omitempty"`
+	PathTranslation string   `json:"path_translation,omitempty" yaml:"path_translation,omitempty"`
+	Deadline        *float64 `json:"deadline,omitempty" yaml:"deadline,omitempty"`
 }
 
 // Transcribe emits GCP API Gateway path entries for the supplied routes.
@@ -122,12 +130,14 @@ func (t Transcriber) operationForRoute(route httpapi.Route) (spec.Operation, err
 	}
 
 	operation := spec.Operation{
-		OperationID:    defaultOperationID(route.Method, route.Path),
-		Summary:        fmt.Sprintf("%s %s", route.Method, route.Path),
-		Consumes:       contentTypesForOpenAPI(route.Endpoint.AcceptedContentTypes()),
-		Produces:       []string{endpointpkg.ApplicationJson},
-		XGoogleBackend: &backend,
-		Responses:      placeholderResponses(),
+		OperationID: defaultOperationID(route.Method, route.Path),
+		Summary:     fmt.Sprintf("%s %s", route.Method, route.Path),
+		Consumes:    contentTypesForOpenAPI(route.Endpoint.AcceptedContentTypes()),
+		Produces:    []string{endpointpkg.ApplicationJson},
+		Responses:   placeholderResponses(),
+	}
+	if err := operation.SetExtension(BackendExtensionName, backend); err != nil {
+		return spec.Operation{}, err
 	}
 	if routeSpec.OperationID != "" {
 		operation.OperationID = routeSpec.OperationID
@@ -148,14 +158,14 @@ func (t Transcriber) operationForRoute(route httpapi.Route) (spec.Operation, err
 	return operation, nil
 }
 
-func (t Transcriber) gatewayBackend(backend endpointpkg.RouteBackend) (spec.GCPGatewayBackend, error) {
+func (t Transcriber) gatewayBackend(backend endpointpkg.RouteBackend) (Backend, error) {
 	backend = backend.WithDefaults(endpointpkg.RouteBackend{
 		Address:  strings.TrimSpace(t.BackendAddress),
 		PathMode: endpointpkg.RoutePathModeAppend,
 	})
 	backend = endpointpkg.NormalizeRouteBackend(backend)
 	if backend.Address == "" {
-		return spec.GCPGatewayBackend{}, ErrBackendAddressRequired
+		return Backend{}, ErrBackendAddressRequired
 	}
 
 	pathTranslation := PathTranslationAppend
@@ -165,7 +175,7 @@ func (t Transcriber) gatewayBackend(backend endpointpkg.RouteBackend) (spec.GCPG
 	case endpointpkg.RoutePathModeConstant:
 		pathTranslation = PathTranslationConstant
 	default:
-		return spec.GCPGatewayBackend{}, fmt.Errorf(
+		return Backend{}, fmt.Errorf(
 			"gcpapigateway: unsupported route path mode %q",
 			backend.PathMode,
 		)
@@ -173,10 +183,10 @@ func (t Transcriber) gatewayBackend(backend endpointpkg.RouteBackend) (spec.GCPG
 
 	deadline, err := gatewayBackendDeadline(backend)
 	if err != nil {
-		return spec.GCPGatewayBackend{}, err
+		return Backend{}, err
 	}
 
-	return spec.GCPGatewayBackend{
+	return Backend{
 		Address:         backend.Address,
 		PathTranslation: pathTranslation,
 		Deadline:        deadline,
