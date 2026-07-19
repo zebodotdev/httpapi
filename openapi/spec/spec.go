@@ -5,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	authpkg "github.com/zebodotdev/httpapi/auth"
-	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 )
 
 var ErrInvalidExtensionName = errors.New(
 	"openapi/spec: extension name must begin with x-",
+)
+
+var ErrDuplicateExtensionName = errors.New(
+	"openapi/spec: duplicate extension name",
 )
 
 // Document is the document-level schema produced from endpoints.
@@ -43,21 +44,24 @@ type Paths map[string]PathItem
 
 // PathItem is the per-path OpenAPI method container.
 type PathItem struct {
-	Get  *Operation `json:"get,omitempty" yaml:"get,omitempty"`
-	Post *Operation `json:"post,omitempty" yaml:"post,omitempty"`
+	Get     *Operation `json:"get,omitempty" yaml:"get,omitempty"`
+	Put     *Operation `json:"put,omitempty" yaml:"put,omitempty"`
+	Post    *Operation `json:"post,omitempty" yaml:"post,omitempty"`
+	Delete  *Operation `json:"delete,omitempty" yaml:"delete,omitempty"`
+	Options *Operation `json:"options,omitempty" yaml:"options,omitempty"`
+	Head    *Operation `json:"head,omitempty" yaml:"head,omitempty"`
+	Patch   *Operation `json:"patch,omitempty" yaml:"patch,omitempty"`
+	Trace   *Operation `json:"trace,omitempty" yaml:"trace,omitempty"`
 }
 
 // Operation is the minimal operation shape used by endpoint transcription.
 type Operation struct {
-	OperationID           string                            `json:"operationId,omitempty" yaml:"operationId,omitempty"`
-	Summary               string                            `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Consumes              []string                          `json:"consumes,omitempty" yaml:"consumes,omitempty"`
-	Produces              []string                          `json:"produces,omitempty" yaml:"produces,omitempty"`
-	XHTTPAPIInternal      bool                              `json:"x-httpapi-internal,omitempty" yaml:"x-httpapi-internal,omitempty"`
-	XHTTPAPIAuthorization *authpkg.AuthorizationRequirement `json:"x-httpapi-authorization,omitempty" yaml:"x-httpapi-authorization,omitempty"`
-	XHTTPAPIPriority      endpointpkg.Priority              `json:"x-httpapi-priority,omitempty" yaml:"x-httpapi-priority,omitempty"`
-	Extensions            Extensions                        `json:"-" yaml:"-"`
-	Responses             map[string]Response               `json:"responses" yaml:"responses"`
+	OperationID string              `json:"operationId,omitempty" yaml:"operationId,omitempty"`
+	Summary     string              `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Consumes    []string            `json:"consumes,omitempty" yaml:"consumes,omitempty"`
+	Produces    []string            `json:"produces,omitempty" yaml:"produces,omitempty"`
+	Extensions  Extensions          `json:"-" yaml:"-"`
+	Responses   map[string]Response `json:"responses" yaml:"responses"`
 }
 
 // Response is the minimal OpenAPI response object.
@@ -78,6 +82,12 @@ func (operation *Operation) SetExtension(name string, value any) error {
 	if operation.Extensions == nil {
 		operation.Extensions = Extensions{}
 	}
+	for existing := range operation.Extensions {
+		if normalizeExtensionName(existing) != name {
+			continue
+		}
+		delete(operation.Extensions, existing)
+	}
 	operation.Extensions[name] = value
 
 	return nil
@@ -86,12 +96,17 @@ func (operation *Operation) SetExtension(name string, value any) error {
 // Extension returns one OpenAPI Specification Extension value.
 func (operation Operation) Extension(name string) (any, bool) {
 	name = normalizeExtensionName(name)
-	if operation.Extensions == nil {
+	if err := validateExtensionName(name); err != nil {
 		return nil, false
 	}
 
-	value, ok := operation.Extensions[name]
-	return value, ok
+	for existing, value := range operation.Extensions {
+		if normalizeExtensionName(existing) == name {
+			return value, true
+		}
+	}
+
+	return nil, false
 }
 
 // MarshalJSON emits operation extensions inline, as required by OpenAPI.
@@ -110,7 +125,7 @@ func (operation Operation) MarshalYAML() (any, error) {
 }
 
 // AddOperation adds an operation to the given path and method.
-func (paths Paths) AddOperation(path string, method endpointpkg.Method, operation Operation) error {
+func (paths Paths) AddOperation(path string, method string, operation Operation) error {
 	if paths == nil {
 		return fmt.Errorf("openapi/spec: paths cannot be nil")
 	}
@@ -126,6 +141,10 @@ func (paths Paths) AddOperation(path string, method endpointpkg.Method, operatio
 
 // Merge copies path operations from other into paths.
 func (paths Paths) Merge(other Paths) error {
+	if paths == nil {
+		return fmt.Errorf("openapi/spec: paths cannot be nil")
+	}
+
 	for path, item := range other {
 		existing := paths[path]
 		if err := existing.Merge(item); err != nil {
@@ -138,38 +157,42 @@ func (paths Paths) Merge(other Paths) error {
 }
 
 // SetOperation sets one method operation on a path item.
-func (p *PathItem) SetOperation(method endpointpkg.Method, operation Operation) error {
-	switch method {
-	case endpointpkg.GET:
-		if p.Get != nil {
-			return fmt.Errorf("duplicate %s operation", method)
-		}
-		p.Get = &operation
-	case endpointpkg.POST:
-		if p.Post != nil {
-			return fmt.Errorf("duplicate %s operation", method)
-		}
-		p.Post = &operation
-	default:
-		return fmt.Errorf("unsupported openapi method %q", method)
+func (p *PathItem) SetOperation(method string, operation Operation) error {
+	slot, err := p.operationSlot(method)
+	if err != nil {
+		return err
+	}
+	if *slot != nil {
+		return fmt.Errorf("duplicate %s operation", normalizeMethod(method))
 	}
 
+	*slot = &operation
 	return nil
 }
 
 // Merge adds all operations from other into p.
 func (p *PathItem) Merge(other PathItem) error {
-	if other.Get != nil {
-		if p.Get != nil {
-			return fmt.Errorf("duplicate %s operation", endpointpkg.GET)
-		}
-		p.Get = other.Get
+	operations := []struct {
+		method    string
+		operation *Operation
+	}{
+		{method: "GET", operation: other.Get},
+		{method: "PUT", operation: other.Put},
+		{method: "POST", operation: other.Post},
+		{method: "DELETE", operation: other.Delete},
+		{method: "OPTIONS", operation: other.Options},
+		{method: "HEAD", operation: other.Head},
+		{method: "PATCH", operation: other.Patch},
+		{method: "TRACE", operation: other.Trace},
 	}
-	if other.Post != nil {
-		if p.Post != nil {
-			return fmt.Errorf("duplicate %s operation", endpointpkg.POST)
+
+	for _, operation := range operations {
+		if operation.operation == nil {
+			continue
 		}
-		p.Post = other.Post
+		if err := p.SetOperation(operation.method, *operation.operation); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -177,7 +200,7 @@ func (p *PathItem) Merge(other PathItem) error {
 
 func (operation Operation) object() (map[string]any, error) {
 	object := map[string]any{
-		"responses": operation.Responses,
+		"responses": operation.responses(),
 	}
 	if operation.OperationID != "" {
 		object["operationId"] = operation.OperationID
@@ -191,24 +214,75 @@ func (operation Operation) object() (map[string]any, error) {
 	if len(operation.Produces) > 0 {
 		object["produces"] = operation.Produces
 	}
-	if operation.XHTTPAPIInternal {
-		object["x-httpapi-internal"] = operation.XHTTPAPIInternal
+
+	extensions, err := normalizeExtensions(operation.Extensions)
+	if err != nil {
+		return nil, err
 	}
-	if operation.XHTTPAPIAuthorization != nil {
-		object["x-httpapi-authorization"] = operation.XHTTPAPIAuthorization
-	}
-	if operation.XHTTPAPIPriority != "" {
-		object["x-httpapi-priority"] = operation.XHTTPAPIPriority
-	}
-	for name, value := range operation.Extensions {
-		name = normalizeExtensionName(name)
-		if err := validateExtensionName(name); err != nil {
-			return nil, err
-		}
+	for name, value := range extensions {
 		object[name] = value
 	}
 
 	return object, nil
+}
+
+func (operation Operation) responses() map[string]Response {
+	if operation.Responses == nil {
+		return map[string]Response{}
+	}
+
+	return operation.Responses
+}
+
+func (p *PathItem) operationSlot(method string) (**Operation, error) {
+	if p == nil {
+		return nil, fmt.Errorf("openapi/spec: path item cannot be nil")
+	}
+
+	switch normalizeMethod(method) {
+	case "GET":
+		return &p.Get, nil
+	case "PUT":
+		return &p.Put, nil
+	case "POST":
+		return &p.Post, nil
+	case "DELETE":
+		return &p.Delete, nil
+	case "OPTIONS":
+		return &p.Options, nil
+	case "HEAD":
+		return &p.Head, nil
+	case "PATCH":
+		return &p.Patch, nil
+	case "TRACE":
+		return &p.Trace, nil
+	default:
+		return nil, fmt.Errorf("unsupported openapi method %q", method)
+	}
+}
+
+func normalizeMethod(method string) string {
+	return strings.ToUpper(strings.TrimSpace(method))
+}
+
+func normalizeExtensions(extensions Extensions) (Extensions, error) {
+	if len(extensions) == 0 {
+		return nil, nil
+	}
+
+	normalized := make(Extensions, len(extensions))
+	for rawName, value := range extensions {
+		name := normalizeExtensionName(rawName)
+		if err := validateExtensionName(name); err != nil {
+			return nil, err
+		}
+		if _, exists := normalized[name]; exists {
+			return nil, fmt.Errorf("%w: %q", ErrDuplicateExtensionName, name)
+		}
+		normalized[name] = value
+	}
+
+	return normalized, nil
 }
 
 func normalizeExtensionName(name string) string {
@@ -216,7 +290,7 @@ func normalizeExtensionName(name string) string {
 }
 
 func validateExtensionName(name string) error {
-	if !strings.HasPrefix(strings.ToLower(name), "x-") {
+	if !strings.HasPrefix(name, "x-") || name == "x-" {
 		return fmt.Errorf("%w: %q", ErrInvalidExtensionName, name)
 	}
 

@@ -49,12 +49,17 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 	if operation.Summary != "Public operation" {
 		t.Fatalf("summary = %q", operation.Summary)
 	}
-	if operation.XHTTPAPIAuthorization == nil ||
-		operation.XHTTPAPIAuthorization.Kind != httpapi.AuthorizationKindBearer {
-		t.Fatalf("authorization metadata = %#v", operation.XHTTPAPIAuthorization)
+	authValue, ok := operation.Extension(HTTPAPIAuthorizationExtensionName)
+	if !ok {
+		t.Fatal("authorization metadata missing")
 	}
-	if operation.XHTTPAPIPriority != httpapi.EndpointPriorityHigh {
-		t.Fatalf("priority = %q", operation.XHTTPAPIPriority)
+	auth, ok := authValue.(httpapi.AuthorizationRequirement)
+	if !ok || auth.Kind != httpapi.AuthorizationKindBearer {
+		t.Fatalf("authorization metadata = %#v", authValue)
+	}
+	priority, ok := operation.Extension(HTTPAPIPriorityExtensionName)
+	if !ok || priority != httpapi.EndpointPriorityHigh {
+		t.Fatalf("priority = %#v", priority)
 	}
 	encoded, err := json.Marshal(paths)
 	if err != nil {

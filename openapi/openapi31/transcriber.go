@@ -11,10 +11,12 @@ import (
 )
 
 const (
-	DocumentSpecVersion            = "3.1.1"
-	DefaultDocumentTitle           = "http api"
-	DefaultDocumentDescription     = "machine-readable representation of the http api"
-	PlaceholderResponseDescription = "Required placeholder response."
+	DocumentSpecVersion               = "3.1.1"
+	DefaultDocumentTitle              = "http api"
+	DefaultDocumentDescription        = "machine-readable representation of the http api"
+	PlaceholderResponseDescription    = "Required placeholder response."
+	HTTPAPIAuthorizationExtensionName = "x-httpapi-authorization"
+	HTTPAPIPriorityExtensionName      = "x-httpapi-priority"
 )
 
 var ErrDocumentVersionRequired = errors.New(
@@ -103,7 +105,10 @@ func (t Transcriber) transcribe(routes internalroute.Routes) (spec.Paths, error)
 		if route.Endpoint.IsInternal() {
 			continue
 		}
-		operation := operationForRoute(route)
+		operation, err := operationForRoute(route)
+		if err != nil {
+			return nil, err
+		}
 		if err := paths.AddOperation(route.Path, route.Method, operation); err != nil {
 			return nil, err
 		}
@@ -162,7 +167,7 @@ func (t Transcriber) documentDescription() string {
 	return description
 }
 
-func operationForRoute(route internalroute.Route) spec.Operation {
+func operationForRoute(route internalroute.Route) (spec.Operation, error) {
 	routeSpec := route.Endpoint.RouteSpec()
 	operation := spec.Operation{
 		OperationID: defaultOperationID(route.Method, route.Path),
@@ -176,13 +181,17 @@ func operationForRoute(route internalroute.Route) spec.Operation {
 		operation.Summary = routeSpec.Summary
 	}
 	if auth := route.Endpoint.Authorization(); auth.Required {
-		operation.XHTTPAPIAuthorization = &auth
+		if err := operation.SetExtension(HTTPAPIAuthorizationExtensionName, auth); err != nil {
+			return spec.Operation{}, err
+		}
 	}
 	if priority := route.Endpoint.Priority(); priority != "" {
-		operation.XHTTPAPIPriority = priority
+		if err := operation.SetExtension(HTTPAPIPriorityExtensionName, priority); err != nil {
+			return spec.Operation{}, err
+		}
 	}
 
-	return operation
+	return operation, nil
 }
 
 func placeholderResponses() map[string]spec.Response {

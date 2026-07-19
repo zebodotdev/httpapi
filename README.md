@@ -96,9 +96,9 @@ their service name so default scopes do not collide across services.
 
 ## Transcription
 
-Endpoint metadata is provider-neutral. Gateway writers translate `RouteSpec`
-and `RouteBackend` into provider-specific fields. Extract routes from endpoints
-or endpoint groups first, then pass those routes to a target-specific writer.
+Endpoint metadata is provider-neutral. Target-specific writers translate
+`RouteSpec` and `RouteBackend` into their own document fields. Pass endpoints or
+endpoint groups directly to the transcriber for the OpenAPI target you need.
 
 ```go
 doc, err := gcpapigateway.Transcriber{

@@ -13,15 +13,18 @@ import (
 )
 
 const (
-	DocumentSpecVersion            = "2.0"
-	DefaultDocumentTitle           = "http api"
-	DefaultDocumentDescription     = "machine-readable representation of the http api"
-	DefaultScheme                  = "https"
-	BackendExtensionName           = "x-google-backend"
-	PathTranslationAppend          = "APPEND_PATH_TO_ADDRESS"
-	PathTranslationConstant        = "CONSTANT_ADDRESS"
-	BackendDeadlineMax             = 600 * time.Second
-	PlaceholderResponseDescription = "Required placeholder response."
+	DocumentSpecVersion               = "2.0"
+	DefaultDocumentTitle              = "http api"
+	DefaultDocumentDescription        = "machine-readable representation of the http api"
+	DefaultScheme                     = "https"
+	BackendExtensionName              = "x-google-backend"
+	HTTPAPIInternalExtensionName      = "x-httpapi-internal"
+	HTTPAPIAuthorizationExtensionName = "x-httpapi-authorization"
+	HTTPAPIPriorityExtensionName      = "x-httpapi-priority"
+	PathTranslationAppend             = "APPEND_PATH_TO_ADDRESS"
+	PathTranslationConstant           = "CONSTANT_ADDRESS"
+	BackendDeadlineMax                = 600 * time.Second
+	PlaceholderResponseDescription    = "Required placeholder response."
 )
 
 var (
@@ -207,13 +210,19 @@ func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operatio
 		operation.Summary = routeSpec.Summary
 	}
 	if route.Endpoint.IsInternal() {
-		operation.XHTTPAPIInternal = true
+		if err := operation.SetExtension(HTTPAPIInternalExtensionName, true); err != nil {
+			return spec.Operation{}, err
+		}
 	}
 	if auth := route.Endpoint.Authorization(); auth.Required {
-		operation.XHTTPAPIAuthorization = &auth
+		if err := operation.SetExtension(HTTPAPIAuthorizationExtensionName, auth); err != nil {
+			return spec.Operation{}, err
+		}
 	}
 	if priority := route.Endpoint.Priority(); priority != "" {
-		operation.XHTTPAPIPriority = priority
+		if err := operation.SetExtension(HTTPAPIPriorityExtensionName, priority); err != nil {
+			return spec.Operation{}, err
+		}
 	}
 
 	return operation, nil

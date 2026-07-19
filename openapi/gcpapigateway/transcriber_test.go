@@ -45,12 +45,17 @@ func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 	if operation.Responses["default"].Description != PlaceholderResponseDescription {
 		t.Fatalf("default response = %#v", operation.Responses["default"])
 	}
-	if !operation.XHTTPAPIInternal {
-		t.Fatal("internal metadata missing from operation")
+	internal, ok := operation.Extension(HTTPAPIInternalExtensionName)
+	if !ok || internal != true {
+		t.Fatalf("internal metadata = %#v, want true", internal)
 	}
-	if operation.XHTTPAPIAuthorization == nil ||
-		operation.XHTTPAPIAuthorization.Kind != httpapi.AuthorizationKindService {
-		t.Fatalf("authorization metadata = %#v", operation.XHTTPAPIAuthorization)
+	authValue, ok := operation.Extension(HTTPAPIAuthorizationExtensionName)
+	if !ok {
+		t.Fatal("authorization metadata missing")
+	}
+	auth, ok := authValue.(httpapi.AuthorizationRequirement)
+	if !ok || auth.Kind != httpapi.AuthorizationKindService {
+		t.Fatalf("authorization metadata = %#v", authValue)
 	}
 
 	encoded, err := json.Marshal(paths)
