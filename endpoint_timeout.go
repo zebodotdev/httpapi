@@ -85,14 +85,6 @@ func (e Endpoint) timeoutSpec() EndpointTimeoutSpec {
 	return normalizeEndpointTimeoutSpec(e.timeout.timeout)
 }
 
-func (e Endpoint) timeoutHandler() EndpointTimeoutHandler {
-	if e.timeout.handler != nil {
-		return e.timeout.handler
-	}
-
-	return DefaultEndpointTimeoutHandler
-}
-
 func (e *Endpoint) mutableTimeoutPolicy() *endpointTimeoutPolicy {
 	return &e.timeout
 }
@@ -116,12 +108,9 @@ func (p *endpointTimeoutPolicy) inheritDefaults(defaults EndpointTimeoutSpec) {
 }
 
 func (p *endpointTimeoutPolicy) inheritHandler(handler EndpointTimeoutHandler) {
-	if handler == nil {
-		return
-	}
 	if p.handler == nil || p.timeoutHandlerInherited {
 		p.handler = handler
-		p.timeoutHandlerInherited = true
+		p.timeoutHandlerInherited = handler != nil
 	}
 }
 
@@ -131,7 +120,13 @@ func DefaultEndpointTimeoutHandler(req *Req) {
 }
 
 func (e Endpoint) handleTimeout(req *Req) {
-	e.timeoutHandler()(req)
+	if e.timeout.handler != nil {
+		e.timeout.handler(req)
+		if req != nil && req.Res != nil {
+			return
+		}
+	}
+	DefaultEndpointTimeoutHandler(req)
 }
 
 func normalizeEndpointTimeoutSpec(spec EndpointTimeoutSpec) EndpointTimeoutSpec {

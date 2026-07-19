@@ -299,6 +299,33 @@ func TestEndpointHandlerUsesCustomTimeoutHandler(t *testing.T) {
 	}
 }
 
+func TestEndpointHandlerFallsBackWhenCustomTimeoutHandlerDoesNotRender(t *testing.T) {
+	endpoint := DefineEndpoint(EndpointSpec{
+		Method: POST,
+		Path:   "/timeouts",
+		Handler: func(r *Req) {
+			<-r.Context().Done()
+		},
+		Timeout: EndpointTimeoutSpec{
+			Handler: time.Nanosecond,
+		},
+		TimeoutHandler: func(*Req) {},
+	})
+
+	rec := newDeadlineRecorder()
+	req := httptest.NewRequest(POST, "/timeouts", strings.NewReader(`{}`))
+	req.Header.Set(contentTypeHeaderKey, ApplicationJson)
+
+	endpoint.Handler()(rec, req)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusGatewayTimeout, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"request_timeout"`) {
+		t.Fatalf("body = %s, want request_timeout code", rec.Body.String())
+	}
+}
+
 func TestEndpointGroupTimeoutHandlerAppliesToResolvedHandler(t *testing.T) {
 	group := EndpointGroup{
 		PathPrefix: "/ops",
@@ -326,6 +353,37 @@ func TestEndpointGroupTimeoutHandlerAppliesToResolvedHandler(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"code":"group_timeout"`) {
 		t.Fatalf("body = %s, want group timeout body", rec.Body.String())
+	}
+}
+
+func TestEndpointGroupTimeoutHandlerCanBeCleared(t *testing.T) {
+	group := EndpointGroup{
+		PathPrefix: "/ops",
+		Timeout: EndpointTimeoutSpec{
+			Handler: time.Nanosecond,
+		},
+	}
+	group.ConfigureTimeoutHandler(func(r *Req) {
+		RenderJSON(r, http.StatusAccepted, map[string]string{
+			"code": "group_timeout",
+		})
+	})
+	group.Add(NewEndpoint(POST, "/sync", func(r *Req) {
+		<-r.Context().Done()
+	}))
+	group.ConfigureTimeoutHandler(nil)
+
+	rec := newDeadlineRecorder()
+	req := httptest.NewRequest(POST, "/ops/sync", strings.NewReader(`{}`))
+	req.Header.Set(contentTypeHeaderKey, ApplicationJson)
+
+	group.Endpoints[0].Handler()(rec, req)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusGatewayTimeout, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"request_timeout"`) {
+		t.Fatalf("body = %s, want request_timeout code", rec.Body.String())
 	}
 }
 
