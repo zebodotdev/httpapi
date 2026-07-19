@@ -1,9 +1,7 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -76,13 +74,14 @@ func (e Endpoint) AuthKeys() map[string]bool   { return cloneEndpointAuthKeys(e.
 // prefix. All endpoints in an EndpointGroup are usually
 // concerned with one domain/service/etc.
 type EndpointGroup struct {
-	PathPrefix string
-	Endpoints  []Endpoint
-	Internal   bool
-	Auth       AuthorizationRequirement
-	Route      RouteSpec
-	Priority   EndpointPriority
-	Timeout    EndpointTimeoutSpec
+	PathPrefix     string
+	Endpoints      []Endpoint
+	Internal       bool
+	Auth           AuthorizationRequirement
+	Route          RouteSpec
+	Priority       EndpointPriority
+	Timeout        EndpointTimeoutSpec
+	TimeoutHandler EndpointTimeoutHandler
 }
 
 func (eg EndpointGroup) Authorization() AuthorizationRequirement {
@@ -327,7 +326,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 
 		if req.Res == nil {
 			if endpointTimedOut(req) {
-				RenderErr(req, e.RequestTimeout())
+				endpoint.handleTimeout(req)
 			} else {
 				logr.Printf(
 					"endpoint returned without setting response:"+
@@ -339,54 +338,13 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 		}
 
 		req.Dur = time.Since(startedAt)
-		if req.Res.BodyReader != nil {
-			written, err := writeResponseStream(w, req, timeout)
-			if written > 0 {
-				responseSizeBytes = written
-			}
-			if err != nil {
-				logr.Printf(
-					"failed to write response stream:"+
-						" request_id=%s method=%s path=%s error=%v",
-					req.ID, req.Method(), req.Path(), err,
-				)
-			}
-			return
-		}
-
-		body, err := req.ResponseBody()
-		if err != nil {
-			logr.Printf(
-				"a really bad error occurred while encoding success"+
-					" response to json and writing to connection: %v"+
-					" returning internal server error instead.",
-				err,
-			)
-
-			RenderErr(req, e.Unexpected())
-			body, err = req.ResponseBody()
-			if err != nil {
-				logr.Printf(
-					"failed to encode fallback error response:"+
-						" request_id=%s method=%s path=%s error=%v",
-					req.ID, req.Method(), req.Path(), err,
-				)
-				body = mustEncodeUnexpectedErr()
-				responseSizeBytes = len(body)
-				_, _ = writeResponseBody(w, req, body, timeout)
-
-				return
-			}
-		}
-		responseSizeBytes = len(body)
-
-		written, err := writeResponseBody(w, req, body, timeout)
+		written, err := writeRenderedResponse(w, req, timeout)
 		if written > 0 {
 			responseSizeBytes = written
 		}
 		if err != nil {
 			logr.Printf(
-				"failed to write response body:"+
+				"failed to write response:"+
 					" request_id=%s method=%s path=%s error=%v",
 				req.ID, req.Method(), req.Path(), err,
 			)
@@ -399,86 +357,25 @@ func writeRenderedResponse(
 	req *Req,
 	timeout EndpointTimeoutSpec,
 ) (int, error) {
-	body, err := req.ResponseBody()
-	if err != nil {
-		return 0, err
+	result, err := WriteResponse(w, req.Res, ResponseWriteOptions{
+		RequestID: req.ID,
+		Duration:  req.Dur,
+		Timeout:   timeout,
+	})
+	if err == nil || result.Status != 0 {
+		return result.BytesWritten, err
 	}
 
-	written, err := writeResponseBody(w, req, body, timeout)
-	if written > 0 {
-		return written, err
-	}
-	return len(body), err
-}
-
-func writeResponseBody(
-	w http.ResponseWriter,
-	req *Req,
-	body []byte,
-	timeout EndpointTimeoutSpec,
-) (int, error) {
-	writeDeadlineSet := setEndpointWriteDeadline(w, req, timeout)
-	if writeDeadlineSet {
-		defer clearEndpointWriteDeadline(w, req)
-	}
-
-	rsh := w.Header()
-	for k, v := range req.Res.Header {
-		for _, hv := range v {
-			rsh.Add(k, hv)
-		}
-	}
-
-	rsh.Add(contentTypeHeaderKey, req.Res.ContentType)
-	rsh.Add(xReqTimingHeaderKey, req.Dur.String())
-	rsh.Add(xReqIDHeaderKey, req.ID)
-	rsh.Add(corsOriginHeaderKey, "*")
-	rsh.Add(corsMethodsHeaderKey, "*")
-	rsh.Add(corsHeadersHeaderKey, "*")
-	w.WriteHeader(req.Res.Status)
-
-	req.Res.Header = rsh
-	return w.Write(body)
-}
-
-func writeResponseStream(
-	w http.ResponseWriter,
-	req *Req,
-	timeout EndpointTimeoutSpec,
-) (int, error) {
-	writeDeadlineSet := setEndpointWriteDeadline(w, req, timeout)
-	if writeDeadlineSet {
-		defer clearEndpointWriteDeadline(w, req)
-	}
-
-	rsh := w.Header()
-	for k, v := range req.Res.Header {
-		for _, hv := range v {
-			rsh.Add(k, hv)
-		}
-	}
-
-	rsh.Add(contentTypeHeaderKey, req.Res.ContentType)
-	rsh.Add(xReqTimingHeaderKey, req.Dur.String())
-	rsh.Add(xReqIDHeaderKey, req.ID)
-	rsh.Add(corsOriginHeaderKey, "*")
-	rsh.Add(corsMethodsHeaderKey, "*")
-	rsh.Add(corsHeadersHeaderKey, "*")
-	w.WriteHeader(req.Res.Status)
-
-	req.Res.Header = rsh
-	if closer, ok := req.Res.BodyReader.(io.Closer); ok {
-		defer closer.Close()
-	}
-	written, err := io.Copy(w, req.Res.BodyReader)
-	return int(written), err
-}
-
-func mustEncodeUnexpectedErr() []byte {
-	body, err := json.Marshal(ErrRes{Err: e.Unexpected()})
-	if err != nil {
-		panic(err)
-	}
-
-	return append(body, '\n')
+	logr.Printf(
+		"failed to encode response body:"+
+			" request_id=%s method=%s path=%s error=%v",
+		req.ID, req.Method(), req.Path(), err,
+	)
+	RenderErr(req, e.Unexpected())
+	result, err = WriteResponse(w, req.Res, ResponseWriteOptions{
+		RequestID: req.ID,
+		Duration:  req.Dur,
+		Timeout:   timeout,
+	})
+	return result.BytesWritten, err
 }

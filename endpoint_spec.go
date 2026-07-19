@@ -18,7 +18,11 @@ type EndpointSpec struct {
 	Route       RouteSpec
 	Priority    EndpointPriority
 	Timeout     EndpointTimeoutSpec
-	AuthKeys    map[string]bool
+	// TimeoutHandler renders the response when the handler context reaches its
+	// timeout before the endpoint produces a response. When unset, httpapi
+	// renders DefaultEndpointTimeoutHandler.
+	TimeoutHandler EndpointTimeoutHandler
+	AuthKeys       map[string]bool
 }
 
 // EndpointAccessSpec declares endpoint access requirements.
@@ -65,6 +69,7 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 		},
 		timeout: endpointTimeoutPolicy{
 			timeout: normalizeEndpointTimeoutSpec(spec.Timeout),
+			handler: spec.TimeoutHandler,
 		},
 		authKeys: cloneEndpointAuthKeys(spec.AuthKeys),
 	}

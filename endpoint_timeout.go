@@ -7,6 +7,7 @@ import (
 	"time"
 
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
+	e "github.com/zebodotdev/httpapi/erreur"
 )
 
 // EndpointTimeoutSpec declares runtime timeout budgets for one endpoint.
@@ -16,12 +17,18 @@ import (
 // deadlines for transcribed route specs.
 type EndpointTimeoutSpec = endpointpkg.TimeoutSpec
 
+// EndpointTimeoutHandler renders the response for an endpoint whose handler
+// context exceeded its configured timeout before a response was produced.
+type EndpointTimeoutHandler func(*Req)
+
 type endpointTimeoutPolicy struct {
 	timeout EndpointTimeoutSpec
+	handler EndpointTimeoutHandler
 
-	readBodyInherited bool
-	handlerInherited  bool
-	writeInherited    bool
+	readBodyInherited       bool
+	handlerInherited        bool
+	writeInherited          bool
+	timeoutHandlerInherited bool
 }
 
 type endpointDeadlineSetter func(*http.ResponseController, time.Time) error
@@ -30,7 +37,18 @@ type endpointDeadlineSetter func(*http.ResponseController, time.Time) error
 func WithTimeoutSpec(spec EndpointTimeoutSpec) EndpointOption {
 	spec = normalizeEndpointTimeoutSpec(spec)
 	return func(e *Endpoint) {
-		e.timeout = endpointTimeoutPolicy{timeout: spec}
+		e.timeout.timeout = spec
+		e.timeout.readBodyInherited = false
+		e.timeout.handlerInherited = false
+		e.timeout.writeInherited = false
+	}
+}
+
+// WithTimeoutHandler sets the endpoint-specific timeout response handler.
+func WithTimeoutHandler(handler EndpointTimeoutHandler) EndpointOption {
+	return func(e *Endpoint) {
+		e.timeout.handler = handler
+		e.timeout.timeoutHandlerInherited = false
 	}
 }
 
@@ -45,6 +63,16 @@ func (eg *EndpointGroup) ConfigureTimeoutSpec(spec EndpointTimeoutSpec) {
 	}
 }
 
+// ConfigureTimeoutHandler sets the default timeout response handler for
+// endpoints in the group. Endpoint-level timeout handlers override it.
+func (eg *EndpointGroup) ConfigureTimeoutHandler(handler EndpointTimeoutHandler) {
+	eg.TimeoutHandler = handler
+	for i := range eg.Endpoints {
+		eg.Endpoints[i].mutableTimeoutPolicy().inheritHandler(handler)
+		eg.Endpoints[i] = eg.Endpoints[i].withRebuiltHandler()
+	}
+}
+
 func (eg EndpointGroup) TimeoutSpec() EndpointTimeoutSpec {
 	return normalizeEndpointTimeoutSpec(eg.Timeout)
 }
@@ -55,6 +83,14 @@ func (e Endpoint) TimeoutSpec() EndpointTimeoutSpec {
 
 func (e Endpoint) timeoutSpec() EndpointTimeoutSpec {
 	return normalizeEndpointTimeoutSpec(e.timeout.timeout)
+}
+
+func (e Endpoint) timeoutHandler() EndpointTimeoutHandler {
+	if e.timeout.handler != nil {
+		return e.timeout.handler
+	}
+
+	return DefaultEndpointTimeoutHandler
 }
 
 func (e *Endpoint) mutableTimeoutPolicy() *endpointTimeoutPolicy {
@@ -77,6 +113,25 @@ func (p *endpointTimeoutPolicy) inheritDefaults(defaults EndpointTimeoutSpec) {
 		p.timeout.Write = defaults.Write
 		p.writeInherited = defaults.Write != 0
 	}
+}
+
+func (p *endpointTimeoutPolicy) inheritHandler(handler EndpointTimeoutHandler) {
+	if handler == nil {
+		return
+	}
+	if p.handler == nil || p.timeoutHandlerInherited {
+		p.handler = handler
+		p.timeoutHandlerInherited = true
+	}
+}
+
+// DefaultEndpointTimeoutHandler renders the default timeout response.
+func DefaultEndpointTimeoutHandler(req *Req) {
+	RenderErr(req, e.RequestTimeout())
+}
+
+func (e Endpoint) handleTimeout(req *Req) {
+	e.timeoutHandler()(req)
 }
 
 func normalizeEndpointTimeoutSpec(spec EndpointTimeoutSpec) EndpointTimeoutSpec {
@@ -120,7 +175,11 @@ func setEndpointReadBodyDeadline(
 
 	return applyEndpointDeadline(
 		w,
-		req,
+		endpointDeadlineLogContext{
+			RequestID: requestIDForDeadlineLog(req),
+			Method:    methodForDeadlineLog(req),
+			Path:      pathForDeadlineLog(req),
+		},
 		time.Now().Add(timeout.ReadBody),
 		"read_body",
 		(*http.ResponseController).SetReadDeadline,
@@ -130,7 +189,11 @@ func setEndpointReadBodyDeadline(
 func clearEndpointReadBodyDeadline(w http.ResponseWriter, req *Req) {
 	applyEndpointDeadline(
 		w,
-		req,
+		endpointDeadlineLogContext{
+			RequestID: requestIDForDeadlineLog(req),
+			Method:    methodForDeadlineLog(req),
+			Path:      pathForDeadlineLog(req),
+		},
 		time.Time{},
 		"read_body",
 		(*http.ResponseController).SetReadDeadline,
@@ -139,7 +202,7 @@ func clearEndpointReadBodyDeadline(w http.ResponseWriter, req *Req) {
 
 func setEndpointWriteDeadline(
 	w http.ResponseWriter,
-	req *Req,
+	requestID string,
 	timeout EndpointTimeoutSpec,
 ) bool {
 	timeout = normalizeEndpointTimeoutSpec(timeout)
@@ -149,26 +212,32 @@ func setEndpointWriteDeadline(
 
 	return applyEndpointDeadline(
 		w,
-		req,
+		endpointDeadlineLogContext{RequestID: requestID},
 		time.Now().Add(timeout.Write),
 		"write",
 		(*http.ResponseController).SetWriteDeadline,
 	)
 }
 
-func clearEndpointWriteDeadline(w http.ResponseWriter, req *Req) {
+func clearEndpointWriteDeadline(w http.ResponseWriter, requestID string) {
 	applyEndpointDeadline(
 		w,
-		req,
+		endpointDeadlineLogContext{RequestID: requestID},
 		time.Time{},
 		"write",
 		(*http.ResponseController).SetWriteDeadline,
 	)
 }
 
+type endpointDeadlineLogContext struct {
+	RequestID string
+	Method    string
+	Path      string
+}
+
 func applyEndpointDeadline(
 	w http.ResponseWriter,
-	req *Req,
+	logContext endpointDeadlineLogContext,
 	deadline time.Time,
 	phase string,
 	set endpointDeadlineSetter,
@@ -186,9 +255,9 @@ func applyEndpointDeadline(
 			"failed to set endpoint %s deadline:"+
 				" request_id=%s method=%s path=%s deadline=%v error=%v",
 			phase,
-			requestIDForDeadlineLog(req),
-			methodForDeadlineLog(req),
-			pathForDeadlineLog(req),
+			logContext.RequestID,
+			logContext.Method,
+			logContext.Path,
 			deadline,
 			err,
 		)

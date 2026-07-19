@@ -268,6 +268,67 @@ func TestEndpointHandlerRendersTimeoutWhenContextBudgetExpires(t *testing.T) {
 	}
 }
 
+func TestEndpointHandlerUsesCustomTimeoutHandler(t *testing.T) {
+	endpoint := DefineEndpoint(EndpointSpec{
+		Method: POST,
+		Path:   "/timeouts",
+		Handler: func(r *Req) {
+			<-r.Context().Done()
+		},
+		Timeout: EndpointTimeoutSpec{
+			Handler: time.Nanosecond,
+		},
+		TimeoutHandler: func(r *Req) {
+			RenderJSON(r, http.StatusAccepted, map[string]string{
+				"code": "queued_after_timeout",
+			})
+		},
+	})
+
+	rec := newDeadlineRecorder()
+	req := httptest.NewRequest(POST, "/timeouts", strings.NewReader(`{}`))
+	req.Header.Set(contentTypeHeaderKey, ApplicationJson)
+
+	endpoint.Handler()(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"queued_after_timeout"`) {
+		t.Fatalf("body = %s, want custom timeout body", rec.Body.String())
+	}
+}
+
+func TestEndpointGroupTimeoutHandlerAppliesToResolvedHandler(t *testing.T) {
+	group := EndpointGroup{
+		PathPrefix: "/ops",
+		Timeout: EndpointTimeoutSpec{
+			Handler: time.Nanosecond,
+		},
+		TimeoutHandler: func(r *Req) {
+			RenderJSON(r, http.StatusAccepted, map[string]string{
+				"code": "group_timeout",
+			})
+		},
+	}
+	group.Add(NewEndpoint(POST, "/sync", func(r *Req) {
+		<-r.Context().Done()
+	}))
+
+	rec := newDeadlineRecorder()
+	req := httptest.NewRequest(POST, "/ops/sync", strings.NewReader(`{}`))
+	req.Header.Set(contentTypeHeaderKey, ApplicationJson)
+
+	group.Endpoints[0].Handler()(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"group_timeout"`) {
+		t.Fatalf("body = %s, want group timeout body", rec.Body.String())
+	}
+}
+
 type deadlineRecorder struct {
 	HeaderMap      http.Header
 	Body           bytes.Buffer

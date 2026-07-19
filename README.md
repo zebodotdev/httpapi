@@ -49,6 +49,11 @@ endpoint := httpapi.DefineEndpoint(httpapi.EndpointSpec{
 		Handler:  10 * time.Second,
 		Write:    2 * time.Second,
 	},
+	TimeoutHandler: func(req *httpapi.Req) {
+		httpapi.RenderJSON(req, http.StatusAccepted, map[string]string{
+			"status": "queued_after_timeout",
+		})
+	},
 	Priority: httpapi.EndpointPriorityHigh,
 })
 ```
@@ -56,6 +61,12 @@ endpoint := httpapi.DefineEndpoint(httpapi.EndpointSpec{
 `NewEndpoint`, `NewIdempotentEndpoint`, and
 `NewIdempotentEndpointWithScopeResolver` remain as compatibility constructors,
 but new code should prefer the declarative spec.
+
+`Timeout.ReadBody`, `Timeout.Handler`, and `Timeout.Write` are runtime budgets
+for request body parsing, endpoint execution, and response writing. If the
+handler budget expires before a response is produced, httpapi calls
+`TimeoutHandler`. When `TimeoutHandler` is unset, httpapi renders the default
+`request_timeout` error response and terminates the request.
 
 ## Service Wiring
 

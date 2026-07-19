@@ -1,0 +1,132 @@
+package httpapi
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestWriteResponseWritesJSONResponse(t *testing.T) {
+	res := &Res{
+		ContentType: ApplicationJson,
+		Status:      http.StatusCreated,
+		Header:      http.Header{"X-Custom": []string{"yes"}},
+		Body:        map[string]string{"ok": "true"},
+	}
+	rec := httptest.NewRecorder()
+
+	result, err := WriteResponse(rec, res, ResponseWriteOptions{
+		RequestID: "req_123",
+		Duration:  12 * time.Millisecond,
+	})
+
+	if err != nil {
+		t.Fatalf("WriteResponse error = %v", err)
+	}
+	if result.Status != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", result.Status, http.StatusCreated)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("response code = %d, want %d", rec.Code, http.StatusCreated)
+	}
+	if got := rec.Header().Get(contentTypeHeaderKey); got != ApplicationJson {
+		t.Fatalf("content-type = %q, want %q", got, ApplicationJson)
+	}
+	if got := rec.Header().Get(xReqIDHeaderKey); got != "req_123" {
+		t.Fatalf("request id header = %q, want req_123", got)
+	}
+	if got := rec.Header().Get("X-Custom"); got != "yes" {
+		t.Fatalf("custom header = %q, want yes", got)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"ok":"true"`) {
+		t.Fatalf("body = %s, want JSON body", body)
+	}
+	if result.BytesWritten <= 0 {
+		t.Fatalf("bytes written = %d, want positive", result.BytesWritten)
+	}
+}
+
+func TestWriteResponseWritesPlainTextString(t *testing.T) {
+	res := &Res{
+		ContentType: TextPlain,
+		Status:      http.StatusAccepted,
+		Header:      http.Header{},
+		Body:        "accepted",
+	}
+	rec := httptest.NewRecorder()
+
+	result, err := WriteResponse(rec, res, ResponseWriteOptions{RequestID: "req_123"})
+
+	if err != nil {
+		t.Fatalf("WriteResponse error = %v", err)
+	}
+	if result.Status != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", result.Status, http.StatusAccepted)
+	}
+	if rec.Body.String() != "accepted" {
+		t.Fatalf("body = %q, want accepted", rec.Body.String())
+	}
+}
+
+func TestWriteResponseStreamsAndClosesBody(t *testing.T) {
+	body := &trackedReadCloser{Reader: strings.NewReader("streamed")}
+	res := &Res{
+		ContentType: TextPlain,
+		Status:      http.StatusOK,
+		Header:      http.Header{},
+		BodyReader:  body,
+	}
+	rec := httptest.NewRecorder()
+
+	result, err := WriteResponse(rec, res, ResponseWriteOptions{RequestID: "req_123"})
+
+	if err != nil {
+		t.Fatalf("WriteResponse error = %v", err)
+	}
+	if !result.Streamed {
+		t.Fatal("streamed = false, want true")
+	}
+	if result.BytesWritten != len("streamed") {
+		t.Fatalf("bytes written = %d, want %d", result.BytesWritten, len("streamed"))
+	}
+	if rec.Body.String() != "streamed" {
+		t.Fatalf("body = %q, want streamed", rec.Body.String())
+	}
+	if !body.closed {
+		t.Fatal("stream body was not closed")
+	}
+}
+
+func TestWriteResponseReturnsBeforeHeadersOnEncodeError(t *testing.T) {
+	res := &Res{
+		ContentType: ApplicationJson,
+		Status:      http.StatusOK,
+		Header:      http.Header{},
+		Body:        make(chan int),
+	}
+	rec := httptest.NewRecorder()
+
+	result, err := WriteResponse(rec, res, ResponseWriteOptions{RequestID: "req_123"})
+
+	if err == nil {
+		t.Fatal("WriteResponse error = nil, want encode error")
+	}
+	if result.Status != 0 {
+		t.Fatalf("result status = %d, want 0 before headers", result.Status)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body length = %d, want 0", rec.Body.Len())
+	}
+}
+
+type trackedReadCloser struct {
+	*strings.Reader
+	closed bool
+}
+
+func (r *trackedReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
