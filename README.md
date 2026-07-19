@@ -97,20 +97,26 @@ their service name so default scopes do not collide across services.
 ## Transcription
 
 Endpoint metadata is provider-neutral. Gateway writers translate `RouteSpec`
-and `RouteBackend` into provider-specific fields. Import writers from
-`github.com/zebodotdev/httpapi/openapi/transcribers`.
+and `RouteBackend` into provider-specific fields. Extract routes from endpoints
+or endpoint groups first, then pass those routes to a target-specific writer.
 
 ```go
-doc, err := transcribers.ForGroup(group).TranscribeGatewayDocument(
-	transcribers.WithOpenAPIVersion("2026-07-18"),
-	transcribers.WithGatewayHost("api.example.gateway.dev"),
-	transcribers.WithGatewayBackendAddress("https://service.example.run.app"),
-)
+routes, err := httpapi.RoutesFromGroup(group)
+if err != nil {
+	return err
+}
+
+doc, err := gcpapigateway.Transcriber{
+	Version:        "2026-07-18",
+	Host:           "api.example.gateway.dev",
+	BackendAddress: "https://service.example.run.app",
+}.TranscribeDocument(routes)
 ```
 
-The current gateway writer emits the GCP API Gateway `x-google-backend` shape.
-The `TranscribeGCPGateway*` and `WithGCPGateway*` helpers remain as explicit
-aliases for that writer.
+Public OpenAPI 3.1 generation uses
+`github.com/zebodotdev/httpapi/openapi/openapi31`. GCP API Gateway generation
+uses `github.com/zebodotdev/httpapi/openapi/gcpapigateway`. Shared document
+shapes live in `github.com/zebodotdev/httpapi/openapi/spec`.
 
 ## Extraction Boundary
 
