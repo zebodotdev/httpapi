@@ -12,7 +12,9 @@ import (
 )
 
 func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
-	routes, err := httpapi.RoutesFromEndpoint(httpapi.NewEndpoint(
+	paths, err := Transcriber{
+		BackendAddress: "https://service.example.internal",
+	}.TranscribeEndpoint(httpapi.NewEndpoint(
 		httpapi.POST,
 		"/internal/sync",
 		noopGCPGatewayHandler,
@@ -20,14 +22,7 @@ func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 		httpapi.WithRequiredAuthorization(httpapi.AuthorizationKindService),
 	))
 	if err != nil {
-		t.Fatalf("RoutesFromEndpoint() error = %v", err)
-	}
-
-	paths, err := Transcriber{
-		BackendAddress: "https://service.example.internal",
-	}.Transcribe(routes)
-	if err != nil {
-		t.Fatalf("Transcribe() error = %v", err)
+		t.Fatalf("TranscribeEndpoint() error = %v", err)
 	}
 
 	operation := paths["/internal/sync"].Post
@@ -93,16 +88,11 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 		Timeout: 20 * time.Second,
 	})
 
-	routes, err := httpapi.RoutesFromGroup(group)
-	if err != nil {
-		t.Fatalf("RoutesFromGroup() error = %v", err)
-	}
-
 	paths, err := Transcriber{
 		BackendAddress: "https://fallback.example.internal",
-	}.Transcribe(routes)
+	}.TranscribeGroup(group)
 	if err != nil {
-		t.Fatalf("Transcribe() error = %v", err)
+		t.Fatalf("TranscribeGroup() error = %v", err)
 	}
 
 	createOperation := paths["/orders/new"].Post
@@ -151,7 +141,7 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 }
 
 func TestTranscribeRejectsBackendTimeoutAboveGatewayLimit(t *testing.T) {
-	routes, err := httpapi.RoutesFromEndpoint(httpapi.NewEndpoint(
+	_, err := Transcriber{}.TranscribeEndpoint(httpapi.NewEndpoint(
 		httpapi.POST,
 		"/exports/start",
 		noopGCPGatewayHandler,
@@ -160,31 +150,21 @@ func TestTranscribeRejectsBackendTimeoutAboveGatewayLimit(t *testing.T) {
 			Timeout: BackendDeadlineMax + time.Second,
 		}),
 	))
-	if err != nil {
-		t.Fatalf("RoutesFromEndpoint() error = %v", err)
-	}
-
-	_, err = Transcriber{}.Transcribe(routes)
 	if !errors.Is(err, ErrBackendDeadlineExceeded) {
 		t.Fatalf("error = %v, want ErrBackendDeadlineExceeded", err)
 	}
 }
 
 func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
-	routes, err := httpapi.RoutesFromEndpoint(
-		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopGCPGatewayHandler),
-	)
-	if err != nil {
-		t.Fatalf("RoutesFromEndpoint() error = %v", err)
-	}
-
 	doc, err := Transcriber{
 		Version:        "0.1.0-beta5",
 		Host:           "api.example.gateway.dev",
 		BackendAddress: "https://service.example.internal",
-	}.TranscribeDocument(routes)
+	}.TranscribeEndpointDocument(
+		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopGCPGatewayHandler),
+	)
 	if err != nil {
-		t.Fatalf("TranscribeDocument() error = %v", err)
+		t.Fatalf("TranscribeEndpointDocument() error = %v", err)
 	}
 
 	if doc.Swagger != DocumentSpecVersion {
@@ -208,14 +188,11 @@ func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
 }
 
 func TestTranscribeDocumentRequiresVersion(t *testing.T) {
-	routes, err := httpapi.RoutesFromEndpoint(
+	_, err := Transcriber{
+		BackendAddress: "https://service.example.internal",
+	}.TranscribeEndpointDocument(
 		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopGCPGatewayHandler),
 	)
-	if err != nil {
-		t.Fatalf("RoutesFromEndpoint() error = %v", err)
-	}
-
-	_, err = Transcriber{BackendAddress: "https://service.example.internal"}.TranscribeDocument(routes)
 	if err != ErrDocumentVersionRequired {
 		t.Fatalf("error = %v, want ErrDocumentVersionRequired", err)
 	}

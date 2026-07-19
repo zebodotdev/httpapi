@@ -1,25 +1,26 @@
-package httpapi
+package route
 
 import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	httpapi "github.com/zebodotdev/httpapi"
 )
 
-// Route is a resolved endpoint mount that can be consumed by documentation,
-// gateway, and other read-only route processors.
+// Route is a resolved endpoint mount used by OpenAPI transcribers.
 type Route struct {
-	Method   HttpMethod
+	Method   httpapi.HttpMethod
 	Path     string
-	Endpoint Endpoint
+	Endpoint httpapi.Endpoint
 }
 
 // Routes is an ordered list of resolved endpoint mounts.
 type Routes []Route
 
-// RoutesFromEndpoint returns the route for one endpoint without a group prefix.
-func RoutesFromEndpoint(endpoint Endpoint) (Routes, error) {
-	route, err := routeFromEndpoint("", endpoint)
+// FromEndpoint returns the route for one endpoint without a group prefix.
+func FromEndpoint(endpoint httpapi.Endpoint) (Routes, error) {
+	route, err := fromEndpoint("", endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -27,8 +28,8 @@ func RoutesFromEndpoint(endpoint Endpoint) (Routes, error) {
 	return Routes{route}, nil
 }
 
-// RoutesFromGroup returns resolved endpoint routes for a group.
-func RoutesFromGroup(group EndpointGroup) (Routes, error) {
+// FromGroup returns resolved endpoint routes for a group.
+func FromGroup(group httpapi.EndpointGroup) (Routes, error) {
 	endpoints := group.ResolvedEndpoints()
 	if len(endpoints) == 0 {
 		return nil, nil
@@ -36,7 +37,7 @@ func RoutesFromGroup(group EndpointGroup) (Routes, error) {
 
 	routes := make(Routes, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		route, err := routeFromEndpoint(group.PathPrefix, endpoint)
+		route, err := fromEndpoint(group.PathPrefix, endpoint)
 		if err != nil {
 			return nil, err
 		}
@@ -46,12 +47,12 @@ func RoutesFromGroup(group EndpointGroup) (Routes, error) {
 	return routes, nil
 }
 
-// RoutesFromGroups returns resolved endpoint routes for several groups while
+// FromGroups returns resolved endpoint routes for several groups while
 // preserving group and endpoint declaration order.
-func RoutesFromGroups(groups ...EndpointGroup) (Routes, error) {
+func FromGroups(groups ...httpapi.EndpointGroup) (Routes, error) {
 	var routes Routes
 	for _, group := range groups {
-		groupRoutes, err := RoutesFromGroup(group)
+		groupRoutes, err := FromGroup(group)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +70,7 @@ func (routes Routes) WithPathPrefix(prefix string) (Routes, error) {
 
 	prefixed := make(Routes, 0, len(routes))
 	for _, route := range routes {
-		path, err := JoinRoutePath(prefix, route.Path)
+		path, err := JoinPath(prefix, route.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -80,8 +81,8 @@ func (routes Routes) WithPathPrefix(prefix string) (Routes, error) {
 	return prefixed, nil
 }
 
-func routeFromEndpoint(prefix string, endpoint Endpoint) (Route, error) {
-	path, err := JoinRoutePath(prefix, endpoint.Pattern())
+func fromEndpoint(prefix string, endpoint httpapi.Endpoint) (Route, error) {
+	path, err := JoinPath(prefix, endpoint.Pattern())
 	if err != nil {
 		return Route{}, err
 	}
@@ -93,9 +94,9 @@ func routeFromEndpoint(prefix string, endpoint Endpoint) (Route, error) {
 	}, nil
 }
 
-// JoinRoutePath joins route path fragments using URL path semantics and returns
-// a normalized path suitable for mounting and transcription.
-func JoinRoutePath(prefix, pattern string) (string, error) {
+// JoinPath joins route path fragments using URL path semantics and returns a
+// normalized path suitable for OpenAPI transcription.
+func JoinPath(prefix, pattern string) (string, error) {
 	prefix = strings.TrimSpace(prefix)
 	pattern = strings.TrimSpace(pattern)
 	if prefix == "" {
@@ -107,11 +108,11 @@ func JoinRoutePath(prefix, pattern string) (string, error) {
 
 	path, err := url.JoinPath(prefix, pattern)
 	if err != nil {
-		return "", fmt.Errorf("httpapi: join route path: %w", err)
+		return "", fmt.Errorf("openapi/internal/route: join path: %w", err)
 	}
 	path, err = url.PathUnescape(path)
 	if err != nil {
-		return "", fmt.Errorf("httpapi: unescape route path: %w", err)
+		return "", fmt.Errorf("openapi/internal/route: unescape path: %w", err)
 	}
 	if path == "" {
 		path = "/"

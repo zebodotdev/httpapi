@@ -8,6 +8,7 @@ import (
 
 	httpapi "github.com/zebodotdev/httpapi"
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
+	internalroute "github.com/zebodotdev/httpapi/openapi/internal/route"
 	"github.com/zebodotdev/httpapi/openapi/spec"
 )
 
@@ -52,8 +53,69 @@ type Backend struct {
 	Deadline        *float64 `json:"deadline,omitempty" yaml:"deadline,omitempty"`
 }
 
-// Transcribe emits GCP API Gateway path entries for the supplied routes.
-func (t Transcriber) Transcribe(routes httpapi.Routes) (spec.Paths, error) {
+// TranscribeEndpoint emits GCP API Gateway path entries for one endpoint.
+func (t Transcriber) TranscribeEndpoint(endpoint httpapi.Endpoint) (spec.Paths, error) {
+	routes, err := internalroute.FromEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.transcribe(routes)
+}
+
+// TranscribeGroup emits GCP API Gateway path entries for one endpoint group.
+func (t Transcriber) TranscribeGroup(group httpapi.EndpointGroup) (spec.Paths, error) {
+	routes, err := internalroute.FromGroup(group)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.transcribe(routes)
+}
+
+// TranscribeGroups emits GCP API Gateway path entries for several endpoint
+// groups.
+func (t Transcriber) TranscribeGroups(groups ...httpapi.EndpointGroup) (spec.Paths, error) {
+	routes, err := internalroute.FromGroups(groups...)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.transcribe(routes)
+}
+
+// TranscribeEndpointDocument emits a GCP API Gateway document for one endpoint.
+func (t Transcriber) TranscribeEndpointDocument(endpoint httpapi.Endpoint) (spec.Document, error) {
+	routes, err := internalroute.FromEndpoint(endpoint)
+	if err != nil {
+		return spec.Document{}, err
+	}
+
+	return t.transcribeDocument(routes)
+}
+
+// TranscribeGroupDocument emits a GCP API Gateway document for one endpoint group.
+func (t Transcriber) TranscribeGroupDocument(group httpapi.EndpointGroup) (spec.Document, error) {
+	routes, err := internalroute.FromGroup(group)
+	if err != nil {
+		return spec.Document{}, err
+	}
+
+	return t.transcribeDocument(routes)
+}
+
+// TranscribeGroupsDocument emits a GCP API Gateway document for several endpoint
+// groups.
+func (t Transcriber) TranscribeGroupsDocument(groups ...httpapi.EndpointGroup) (spec.Document, error) {
+	routes, err := internalroute.FromGroups(groups...)
+	if err != nil {
+		return spec.Document{}, err
+	}
+
+	return t.transcribeDocument(routes)
+}
+
+func (t Transcriber) transcribe(routes internalroute.Routes) (spec.Paths, error) {
 	routes, err := t.routes(routes)
 	if err != nil {
 		return nil, err
@@ -73,13 +135,12 @@ func (t Transcriber) Transcribe(routes httpapi.Routes) (spec.Paths, error) {
 	return paths, nil
 }
 
-// TranscribeDocument emits a GCP API Gateway document for the supplied routes.
-func (t Transcriber) TranscribeDocument(routes httpapi.Routes) (spec.Document, error) {
+func (t Transcriber) transcribeDocument(routes internalroute.Routes) (spec.Document, error) {
 	if strings.TrimSpace(t.Version) == "" {
 		return spec.Document{}, ErrDocumentVersionRequired
 	}
 
-	paths, err := t.Transcribe(routes)
+	paths, err := t.transcribe(routes)
 	if err != nil {
 		return spec.Document{}, err
 	}
@@ -98,7 +159,7 @@ func (t Transcriber) TranscribeDocument(routes httpapi.Routes) (spec.Document, e
 	}, nil
 }
 
-func (t Transcriber) routes(routes httpapi.Routes) (httpapi.Routes, error) {
+func (t Transcriber) routes(routes internalroute.Routes) (internalroute.Routes, error) {
 	if strings.TrimSpace(t.PathPrefix) == "" {
 		return routes, nil
 	}
@@ -122,7 +183,7 @@ func (t Transcriber) documentDescription() string {
 	return description
 }
 
-func (t Transcriber) operationForRoute(route httpapi.Route) (spec.Operation, error) {
+func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operation, error) {
 	routeSpec := route.Endpoint.RouteSpec()
 	backend, err := t.gatewayBackend(routeSpec.Backend)
 	if err != nil {

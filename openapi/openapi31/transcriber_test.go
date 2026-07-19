@@ -31,14 +31,9 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 		httpapi.WithInternal(),
 	))
 
-	routes, err := httpapi.RoutesFromGroup(group)
+	paths, err := Transcriber{}.TranscribeGroup(group)
 	if err != nil {
-		t.Fatalf("RoutesFromGroup() error = %v", err)
-	}
-
-	paths, err := Transcriber{}.Transcribe(routes)
-	if err != nil {
-		t.Fatalf("Transcribe() error = %v", err)
+		t.Fatalf("TranscribeGroup() error = %v", err)
 	}
 
 	if _, ok := paths["/ops/internal"]; ok {
@@ -77,19 +72,14 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 }
 
 func TestTranscribeDocumentIncludesVersionAndServer(t *testing.T) {
-	routes, err := httpapi.RoutesFromEndpoint(
-		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopOpenAPI31Handler),
-	)
-	if err != nil {
-		t.Fatalf("RoutesFromEndpoint() error = %v", err)
-	}
-
 	doc, err := Transcriber{
 		Version:   "2026-07-18",
 		ServerURL: "https://api.example.com",
-	}.TranscribeDocument(routes)
+	}.TranscribeEndpointDocument(
+		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopOpenAPI31Handler),
+	)
 	if err != nil {
-		t.Fatalf("TranscribeDocument() error = %v", err)
+		t.Fatalf("TranscribeEndpointDocument() error = %v", err)
 	}
 
 	if doc.OpenAPI != DocumentSpecVersion {
@@ -107,14 +97,9 @@ func TestTranscribeDocumentIncludesVersionAndServer(t *testing.T) {
 }
 
 func TestTranscribeDocumentRequiresVersion(t *testing.T) {
-	routes, err := httpapi.RoutesFromEndpoint(
+	_, err := Transcriber{}.TranscribeEndpointDocument(
 		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopOpenAPI31Handler),
 	)
-	if err != nil {
-		t.Fatalf("RoutesFromEndpoint() error = %v", err)
-	}
-
-	_, err = Transcriber{}.TranscribeDocument(routes)
 	if err != ErrDocumentVersionRequired {
 		t.Fatalf("error = %v, want ErrDocumentVersionRequired", err)
 	}
@@ -125,14 +110,9 @@ func TestTranscribeWithPathPrefix(t *testing.T) {
 	group.Add(httpapi.NewEndpoint(httpapi.POST, "", noopOpenAPI31Handler))
 	group.Add(httpapi.NewEndpoint(httpapi.GET, "/lookup", noopOpenAPI31Handler))
 
-	routes, err := httpapi.RoutesFromGroup(group)
+	paths, err := Transcriber{PathPrefix: "/v1"}.TranscribeGroup(group)
 	if err != nil {
-		t.Fatalf("RoutesFromGroup() error = %v", err)
-	}
-
-	paths, err := Transcriber{PathPrefix: "/v1"}.Transcribe(routes)
-	if err != nil {
-		t.Fatalf("Transcribe() error = %v", err)
+		t.Fatalf("TranscribeGroup() error = %v", err)
 	}
 
 	if paths["/v1/orders"].Post == nil {

@@ -101,16 +101,11 @@ and `RouteBackend` into provider-specific fields. Extract routes from endpoints
 or endpoint groups first, then pass those routes to a target-specific writer.
 
 ```go
-routes, err := httpapi.RoutesFromGroup(group)
-if err != nil {
-	return err
-}
-
 doc, err := gcpapigateway.Transcriber{
 	Version:        "2026-07-18",
 	Host:           "api.example.gateway.dev",
 	BackendAddress: "https://service.example.run.app",
-}.TranscribeDocument(routes)
+}.TranscribeGroupDocument(group)
 ```
 
 Public OpenAPI 3.1 generation uses
