@@ -29,7 +29,7 @@ var authorizationSchemesState = struct {
 // ConfigureAuthorizationSchemes sets the Authorization header schemes used when
 // deciding which authenticator mode to invoke.
 func ConfigureAuthorizationSchemes(schemes AuthorizationSchemes) func() {
-	schemes = NormalizeAuthorizationSchemes(schemes)
+	schemes = cloneAuthorizationSchemes(NormalizeAuthorizationSchemes(schemes))
 
 	authorizationSchemesState.Lock()
 	prev := authorizationSchemesState.schemes
@@ -46,7 +46,7 @@ func ConfigureAuthorizationSchemes(schemes AuthorizationSchemes) func() {
 func CurrentAuthorizationSchemes() AuthorizationSchemes {
 	authorizationSchemesState.RLock()
 	defer authorizationSchemesState.RUnlock()
-	return authorizationSchemesState.schemes
+	return cloneAuthorizationSchemes(authorizationSchemesState.schemes)
 }
 
 func NormalizeAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSchemes {
@@ -83,6 +83,11 @@ func normalizeAuthorizationSchemeAliases(aliases []string) []string {
 	}
 
 	return normalized
+}
+
+func cloneAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSchemes {
+	schemes.ServiceAliases = append([]string(nil), schemes.ServiceAliases...)
+	return schemes
 }
 
 func (s AuthorizationSchemes) ServiceAuthorizationSchemes() []string {

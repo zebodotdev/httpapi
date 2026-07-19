@@ -25,3 +25,45 @@ func TestNormalizeAuthorizationSchemes(t *testing.T) {
 		}
 	}
 }
+
+func TestCurrentAuthorizationSchemesClonesAliases(t *testing.T) {
+	restore := ConfigureAuthorizationSchemes(AuthorizationSchemes{
+		ServiceAliases: []string{"Assertion"},
+	})
+	defer restore()
+
+	schemes := CurrentAuthorizationSchemes()
+	schemes.ServiceAliases[0] = "Mutated"
+
+	got := CurrentAuthorizationSchemes().ServiceAuthorizationSchemes()
+	want := []string{DefaultServiceAuthorizationScheme, "Assertion"}
+	if len(got) != len(want) {
+		t.Fatalf("service schemes = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("service schemes = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestConfigureAuthorizationSchemesClonesAliases(t *testing.T) {
+	aliases := []string{"Assertion"}
+	restore := ConfigureAuthorizationSchemes(AuthorizationSchemes{
+		ServiceAliases: aliases,
+	})
+	defer restore()
+
+	aliases[0] = "Mutated"
+
+	got := CurrentAuthorizationSchemes().ServiceAuthorizationSchemes()
+	want := []string{DefaultServiceAuthorizationScheme, "Assertion"}
+	if len(got) != len(want) {
+		t.Fatalf("service schemes = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("service schemes = %#v, want %#v", got, want)
+		}
+	}
+}

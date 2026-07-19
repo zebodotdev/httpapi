@@ -14,7 +14,7 @@ The package owns:
 - idempotency orchestration,
 - redacted request audit serialization,
 - error response rendering,
-- and public OpenAPI / gateway transcription.
+- and provider-neutral metadata consumed by OpenAPI / gateway transcribers.
 
 The package does not own service infrastructure. Importing services must provide
 adapters for authentication, durable audit persistence, and idempotency storage.
@@ -97,13 +97,14 @@ their service name so default scopes do not collide across services.
 ## Transcription
 
 Endpoint metadata is provider-neutral. Gateway writers translate `RouteSpec`
-and `RouteBackend` into provider-specific fields.
+and `RouteBackend` into provider-specific fields. Import writers from
+`github.com/zebodotdev/httpapi/openapi/transcribers`.
 
 ```go
-doc, err := group.TranscribeGatewayDocument(
-	httpapi.WithOpenAPIVersion("2026-07-18"),
-	httpapi.WithGatewayHost("api.example.gateway.dev"),
-	httpapi.WithGatewayBackendAddress("https://service.example.run.app"),
+doc, err := transcribers.ForGroup(group).TranscribeGatewayDocument(
+	transcribers.WithOpenAPIVersion("2026-07-18"),
+	transcribers.WithGatewayHost("api.example.gateway.dev"),
+	transcribers.WithGatewayBackendAddress("https://service.example.run.app"),
 )
 ```
 
