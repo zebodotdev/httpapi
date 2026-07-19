@@ -1,4 +1,4 @@
-package httpapi
+package transcribers
 
 import (
 	"encoding/json"
@@ -6,6 +6,38 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	httpapi "github.com/zebodotdev/httpapi"
+)
+
+type EndpointGroup = httpapi.EndpointGroup
+type EndpointTimeoutSpec = httpapi.EndpointTimeoutSpec
+type Req = httpapi.Req
+type RouteSpec = httpapi.RouteSpec
+type AuthorizationRequirement = httpapi.AuthorizationRequirement
+
+const (
+	AuthorizationKindAny     = httpapi.AuthorizationKindAny
+	AuthorizationKindBearer  = httpapi.AuthorizationKindBearer
+	AuthorizationKindService = httpapi.AuthorizationKindService
+
+	EndpointPriorityCritical = httpapi.EndpointPriorityCritical
+	EndpointPriorityHigh     = httpapi.EndpointPriorityHigh
+	EndpointPriorityStandard = httpapi.EndpointPriorityStandard
+	EndpointPriorityLow      = httpapi.EndpointPriorityLow
+)
+
+var (
+	NewEndpoint           = httpapi.NewEndpoint
+	NewIdempotentEndpoint = httpapi.NewIdempotentEndpoint
+	RequiredAuthorization = httpapi.RequiredAuthorization
+
+	WithInternal              = httpapi.WithInternal
+	WithPriority              = httpapi.WithPriority
+	WithRequiredAuthorization = httpapi.WithRequiredAuthorization
+	WithRouteBackend          = httpapi.WithRouteBackend
+	WithRouteSpec             = httpapi.WithRouteSpec
+	WithTimeoutSpec           = httpapi.WithTimeoutSpec
 )
 
 func TestEndpointMetadataOptions(t *testing.T) {
@@ -203,7 +235,7 @@ func TestEndpointPriorityOptionsAndGroupDefaults(t *testing.T) {
 		t.Fatalf("explicit endpoint priority changed to %q", group.Endpoints[1].Priority())
 	}
 
-	paths, err := group.TranscribePublicOpenAPI()
+	paths, err := ForGroup(group).TranscribePublicOpenAPI()
 	if err != nil {
 		t.Fatalf("TranscribePublicOpenAPI() error = %v", err)
 	}
@@ -230,7 +262,7 @@ func TestEndpointGroupLiteralAuthorizationIsNormalized(t *testing.T) {
 		t.Fatalf("endpoint authorization kind = %q, want %q", auth.Kind, AuthorizationKindService)
 	}
 
-	paths, err := group.TranscribePublicOpenAPI()
+	paths, err := ForGroup(group).TranscribePublicOpenAPI()
 	if err != nil {
 		t.Fatalf("TranscribePublicOpenAPI() error = %v", err)
 	}
@@ -249,7 +281,7 @@ func TestPublicOpenAPIRejectsInternalEndpoint(t *testing.T) {
 		WithInternal(),
 	)
 
-	_, err := endpoint.TranscribePublicOpenAPI()
+	_, err := ForEndpoint(endpoint).TranscribePublicOpenAPI()
 	if !errors.Is(err, ErrInternalEndpointPublicOpenAPI) {
 		t.Fatalf("error = %v, want ErrInternalEndpointPublicOpenAPI", err)
 	}
@@ -265,7 +297,7 @@ func TestPublicOpenAPIExcludesInternalGroupEndpoints(t *testing.T) {
 		WithInternal(),
 	))
 
-	paths, err := group.TranscribePublicOpenAPI()
+	paths, err := ForGroup(group).TranscribePublicOpenAPI()
 	if err != nil {
 		t.Fatalf("TranscribePublicOpenAPI() error = %v", err)
 	}
@@ -295,7 +327,7 @@ func TestPublicOpenAPITranscriptionDoesNotEmitGatewayShape(t *testing.T) {
 		}),
 	)
 
-	paths, err := endpoint.TranscribePublicOpenAPI()
+	paths, err := ForEndpoint(endpoint).TranscribePublicOpenAPI()
 	if err != nil {
 		t.Fatalf("TranscribePublicOpenAPI() error = %v", err)
 	}
@@ -335,7 +367,7 @@ func TestPublicOpenAPIDocumentIncludesVersionAndSkipsInternalEndpoints(t *testin
 	group.Add(NewEndpoint(POST, "/new", noopTranscriptionHandler))
 	group.Add(NewEndpoint(POST, "/internal/sync", noopTranscriptionHandler, WithInternal()))
 
-	doc, err := group.TranscribePublicOpenAPIDocument(
+	doc, err := ForGroup(group).TranscribePublicOpenAPIDocument(
 		WithOpenAPIVersion("2026-07-16"),
 		WithOpenAPIServerURL("https://api.example.com"),
 	)
@@ -363,7 +395,7 @@ func TestPublicOpenAPIDocumentIncludesVersionAndSkipsInternalEndpoints(t *testin
 func TestOpenAPIDocumentRequiresVersion(t *testing.T) {
 	endpoint := NewEndpoint(POST, "/orders/new", noopTranscriptionHandler)
 
-	_, err := endpoint.TranscribePublicOpenAPIDocument()
+	_, err := ForEndpoint(endpoint).TranscribePublicOpenAPIDocument()
 	if !errors.Is(err, ErrOpenAPIDocumentVersionRequired) {
 		t.Fatalf("error = %v, want ErrOpenAPIDocumentVersionRequired", err)
 	}
@@ -378,7 +410,7 @@ func TestGCPGatewayTranscriptionEmitsBackendAndDefaultResponse(t *testing.T) {
 		WithRequiredAuthorization(AuthorizationKindService),
 	)
 
-	paths, err := endpoint.TranscribeGCPGateway(
+	paths, err := ForEndpoint(endpoint).TranscribeGCPGateway(
 		WithGCPGatewayBackendAddress("https://service.example.internal"),
 	)
 	if err != nil {
@@ -440,7 +472,7 @@ func TestGCPGatewayTranscriptionUsesRouteSpecBackend(t *testing.T) {
 		}),
 	)
 
-	paths, err := endpoint.TranscribeGCPGateway()
+	paths, err := ForEndpoint(endpoint).TranscribeGCPGateway()
 	if err != nil {
 		t.Fatalf("TranscribeGCPGateway() error = %v", err)
 	}
@@ -495,7 +527,7 @@ func TestEndpointGroupRouteSpecDefaultsAndEndpointOverrides(t *testing.T) {
 		Timeout: 20 * time.Second,
 	})
 
-	paths, err := group.TranscribeGCPGateway(
+	paths, err := ForGroup(group).TranscribeGCPGateway(
 		WithGCPGatewayBackendAddress("https://fallback.example.internal"),
 	)
 	if err != nil {
@@ -556,7 +588,7 @@ func TestGCPGatewayTranscriptionRejectsBackendTimeoutAboveGatewayLimit(t *testin
 		}),
 	)
 
-	_, err := endpoint.TranscribeGCPGateway()
+	_, err := ForEndpoint(endpoint).TranscribeGCPGateway()
 	if !errors.Is(err, ErrGCPGatewayBackendDeadlineExceeded) {
 		t.Fatalf("error = %v, want ErrGCPGatewayBackendDeadlineExceeded", err)
 	}
@@ -565,7 +597,7 @@ func TestGCPGatewayTranscriptionRejectsBackendTimeoutAboveGatewayLimit(t *testin
 func TestGCPGatewayDocumentIncludesSwaggerShape(t *testing.T) {
 	endpoint := NewEndpoint(POST, "/orders/new", noopTranscriptionHandler)
 
-	doc, err := endpoint.TranscribeGCPGatewayDocument(
+	doc, err := ForEndpoint(endpoint).TranscribeGCPGatewayDocument(
 		WithOpenAPIVersion("0.1.0-beta5"),
 		WithGCPGatewayHost("api.example.gateway.dev"),
 		WithGCPGatewayBackendAddress("https://service.example.internal"),
@@ -597,7 +629,7 @@ func TestGCPGatewayDocumentIncludesSwaggerShape(t *testing.T) {
 func TestGatewayTranscriptionNeutralAliases(t *testing.T) {
 	endpoint := NewEndpoint(POST, "/orders/new", noopTranscriptionHandler)
 
-	doc, err := endpoint.TranscribeGatewayDocument(
+	doc, err := ForEndpoint(endpoint).TranscribeGatewayDocument(
 		WithOpenAPIVersion("0.1.0-beta5"),
 		WithGatewayHost("api.example.gateway.dev"),
 		WithGatewayBackendAddress("https://service.example.internal"),
@@ -623,7 +655,7 @@ func TestEndpointGroupTranscriptionPrefixesPaths(t *testing.T) {
 	group.Add(NewEndpoint(POST, "pay", noopTranscriptionHandler))
 	group.Add(NewEndpoint(GET, "/lookup", noopTranscriptionHandler))
 
-	paths, err := group.TranscribePublicOpenAPI(
+	paths, err := ForGroup(group).TranscribePublicOpenAPI(
 		WithOpenAPIPathPrefix("/v1"),
 	)
 	if err != nil {

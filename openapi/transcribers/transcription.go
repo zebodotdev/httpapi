@@ -1,4 +1,4 @@
-package httpapi
+package transcribers
 
 import (
 	"errors"
@@ -6,9 +6,23 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	httpapi "github.com/zebodotdev/httpapi"
 )
 
+type ContentType = httpapi.ContentType
+type HttpMethod = httpapi.HttpMethod
+type RouteBackend = httpapi.RouteBackend
+type RoutePathMode = httpapi.RoutePathMode
+
 const (
+	GET             HttpMethod  = httpapi.GET
+	POST            HttpMethod  = httpapi.POST
+	ApplicationJson ContentType = httpapi.ApplicationJson
+
+	RoutePathModeAppend   RoutePathMode = httpapi.RoutePathModeAppend
+	RoutePathModeConstant RoutePathMode = httpapi.RoutePathModeConstant
+
 	defaultOpenAPIDocumentSpecVersion    = "3.1.1"
 	defaultGCPGatewayDocumentSpecVersion = "2.0"
 	defaultOpenAPIDocumentTitle          = "http api"
@@ -44,7 +58,10 @@ type OpenAPITranscriptionMode string
 const (
 	// OpenAPITranscriptionModePublic emits public OpenAPI path entries.
 	OpenAPITranscriptionModePublic OpenAPITranscriptionMode = "public"
-	// OpenAPITranscriptionModeGateway emits provider-specific gateway path entries.
+	// OpenAPITranscriptionModeGateway emits the default gateway path entries.
+	//
+	// Deprecated: use OpenAPITranscriptionModeGCPGateway when generating GCP API
+	// Gateway specs. Future gateway targets should define explicit modes.
 	OpenAPITranscriptionModeGateway OpenAPITranscriptionMode = OpenAPITranscriptionModeGCPGateway
 	// OpenAPITranscriptionModeGCPGateway emits GCP API Gateway path entries.
 	OpenAPITranscriptionModeGCPGateway OpenAPITranscriptionMode = "gcp_api_gateway"
@@ -55,8 +72,8 @@ type OpenAPITranscriptionOption func(*openAPITranscriptionConfig)
 
 type openAPITranscriptionConfig struct {
 	PathPrefix            string
-	GCPGatewayBackendAddr string
-	GCPGatewayHost        string
+	GatewayBackendAddress string
+	GatewayHost           string
 	DocumentTitle         string
 	DocumentDescription   string
 	DocumentVersion       string
@@ -78,7 +95,7 @@ func WithGCPGatewayBackendAddress(address string) OpenAPITranscriptionOption {
 // WithGatewayBackendAddress sets the backend address for gateway mode.
 func WithGatewayBackendAddress(address string) OpenAPITranscriptionOption {
 	return func(cfg *openAPITranscriptionConfig) {
-		cfg.GCPGatewayBackendAddr = strings.TrimSpace(address)
+		cfg.GatewayBackendAddress = strings.TrimSpace(address)
 	}
 }
 
@@ -90,7 +107,7 @@ func WithGCPGatewayHost(host string) OpenAPITranscriptionOption {
 // WithGatewayHost sets the API host used by gateway documents.
 func WithGatewayHost(host string) OpenAPITranscriptionOption {
 	return func(cfg *openAPITranscriptionConfig) {
-		cfg.GCPGatewayHost = strings.TrimSpace(host)
+		cfg.GatewayHost = strings.TrimSpace(host)
 	}
 }
 
@@ -157,15 +174,15 @@ type OpenAPIPathItem struct {
 
 // OpenAPIOperation is the minimal operation shape used by endpoint transcription.
 type OpenAPIOperation struct {
-	OperationID           string                     `json:"operationId,omitempty" yaml:"operationId,omitempty"`
-	Summary               string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Consumes              []string                   `json:"consumes,omitempty" yaml:"consumes,omitempty"`
-	Produces              []string                   `json:"produces,omitempty" yaml:"produces,omitempty"`
-	XGoogleBackend        *GCPGatewayBackend         `json:"x-google-backend,omitempty" yaml:"x-google-backend,omitempty"`
-	XHTTPAPIInternal      bool                       `json:"x-httpapi-internal,omitempty" yaml:"x-httpapi-internal,omitempty"`
-	XHTTPAPIAuthorization *AuthorizationRequirement  `json:"x-httpapi-authorization,omitempty" yaml:"x-httpapi-authorization,omitempty"`
-	XHTTPAPIPriority      EndpointPriority           `json:"x-httpapi-priority,omitempty" yaml:"x-httpapi-priority,omitempty"`
-	Responses             map[string]OpenAPIResponse `json:"responses" yaml:"responses"`
+	OperationID           string                            `json:"operationId,omitempty" yaml:"operationId,omitempty"`
+	Summary               string                            `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Consumes              []string                          `json:"consumes,omitempty" yaml:"consumes,omitempty"`
+	Produces              []string                          `json:"produces,omitempty" yaml:"produces,omitempty"`
+	XGoogleBackend        *GCPGatewayBackend                `json:"x-google-backend,omitempty" yaml:"x-google-backend,omitempty"`
+	XHTTPAPIInternal      bool                              `json:"x-httpapi-internal,omitempty" yaml:"x-httpapi-internal,omitempty"`
+	XHTTPAPIAuthorization *httpapi.AuthorizationRequirement `json:"x-httpapi-authorization,omitempty" yaml:"x-httpapi-authorization,omitempty"`
+	XHTTPAPIPriority      httpapi.EndpointPriority          `json:"x-httpapi-priority,omitempty" yaml:"x-httpapi-priority,omitempty"`
+	Responses             map[string]OpenAPIResponse        `json:"responses" yaml:"responses"`
 }
 
 // GCPGatewayBackend is the GCP API Gateway x-google-backend extension.
@@ -180,64 +197,85 @@ type OpenAPIResponse struct {
 	Description string `json:"description" yaml:"description"`
 }
 
+type EndpointTarget struct {
+	endpoint httpapi.Endpoint
+}
+
+type GroupTarget struct {
+	group httpapi.EndpointGroup
+}
+
+func ForEndpoint(endpoint httpapi.Endpoint) EndpointTarget {
+	return EndpointTarget{endpoint: endpoint}
+}
+
+func ForGroup(group httpapi.EndpointGroup) GroupTarget {
+	return GroupTarget{group: group}
+}
+
 // TranscribePublicOpenAPI emits public OpenAPI paths for the endpoint.
-func (e Endpoint) TranscribePublicOpenAPI(
+func (t EndpointTarget) TranscribePublicOpenAPI(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
-	return e.Transcribe(OpenAPITranscriptionModePublic, opts...)
+	return t.Transcribe(OpenAPITranscriptionModePublic, opts...)
 }
 
 // TranscribeGCPGateway emits GCP API Gateway paths for the endpoint.
-func (e Endpoint) TranscribeGCPGateway(
+func (t EndpointTarget) TranscribeGCPGateway(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
-	return e.Transcribe(OpenAPITranscriptionModeGCPGateway, opts...)
+	return t.Transcribe(OpenAPITranscriptionModeGCPGateway, opts...)
 }
 
-// TranscribeGateway emits gateway paths for the endpoint.
-func (e Endpoint) TranscribeGateway(
+// TranscribeGateway emits the default gateway paths for the endpoint.
+//
+// Deprecated: use TranscribeGCPGateway when generating GCP API Gateway specs.
+func (t EndpointTarget) TranscribeGateway(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
-	return e.Transcribe(OpenAPITranscriptionModeGateway, opts...)
+	return t.Transcribe(OpenAPITranscriptionModeGateway, opts...)
 }
 
 // TranscribePublicOpenAPIDocument emits a public OpenAPI 3.1 document.
-func (e Endpoint) TranscribePublicOpenAPIDocument(
+func (t EndpointTarget) TranscribePublicOpenAPIDocument(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
-	return e.TranscribeDocument(OpenAPITranscriptionModePublic, opts...)
+	return t.TranscribeDocument(OpenAPITranscriptionModePublic, opts...)
 }
 
 // TranscribeGCPGatewayDocument emits a GCP API Gateway Swagger 2.0 document.
-func (e Endpoint) TranscribeGCPGatewayDocument(
+func (t EndpointTarget) TranscribeGCPGatewayDocument(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
-	return e.TranscribeDocument(OpenAPITranscriptionModeGCPGateway, opts...)
+	return t.TranscribeDocument(OpenAPITranscriptionModeGCPGateway, opts...)
 }
 
-// TranscribeGatewayDocument emits a gateway document.
-func (e Endpoint) TranscribeGatewayDocument(
+// TranscribeGatewayDocument emits the default gateway document.
+//
+// Deprecated: use TranscribeGCPGatewayDocument when generating GCP API Gateway
+// specs.
+func (t EndpointTarget) TranscribeGatewayDocument(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
-	return e.TranscribeDocument(OpenAPITranscriptionModeGateway, opts...)
+	return t.TranscribeDocument(OpenAPITranscriptionModeGateway, opts...)
 }
 
 // Transcribe emits OpenAPI path entries for the endpoint.
-func (e Endpoint) Transcribe(
+func (t EndpointTarget) Transcribe(
 	mode OpenAPITranscriptionMode,
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
 	cfg := openAPIConfig(opts)
-	return e.transcribe(mode, cfg)
+	return transcribeEndpoint(t.endpoint, mode, cfg)
 }
 
 // TranscribeDocument emits a document-level OpenAPI schema for the endpoint.
-func (e Endpoint) TranscribeDocument(
+func (t EndpointTarget) TranscribeDocument(
 	mode OpenAPITranscriptionMode,
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
 	cfg := openAPIConfig(opts)
-	paths, err := e.transcribe(mode, cfg)
+	paths, err := transcribeEndpoint(t.endpoint, mode, cfg)
 	if err != nil {
 		return OpenAPIDocument{}, err
 	}
@@ -246,63 +284,68 @@ func (e Endpoint) TranscribeDocument(
 }
 
 // TranscribePublicOpenAPI emits public OpenAPI paths for the endpoint group.
-func (eg EndpointGroup) TranscribePublicOpenAPI(
+func (t GroupTarget) TranscribePublicOpenAPI(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
-	return eg.Transcribe(OpenAPITranscriptionModePublic, opts...)
+	return t.Transcribe(OpenAPITranscriptionModePublic, opts...)
 }
 
 // TranscribeGCPGateway emits GCP API Gateway paths for the endpoint group.
-func (eg EndpointGroup) TranscribeGCPGateway(
+func (t GroupTarget) TranscribeGCPGateway(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
-	return eg.Transcribe(OpenAPITranscriptionModeGCPGateway, opts...)
+	return t.Transcribe(OpenAPITranscriptionModeGCPGateway, opts...)
 }
 
-// TranscribeGateway emits gateway paths for the endpoint group.
-func (eg EndpointGroup) TranscribeGateway(
+// TranscribeGateway emits the default gateway paths for the endpoint group.
+//
+// Deprecated: use TranscribeGCPGateway when generating GCP API Gateway specs.
+func (t GroupTarget) TranscribeGateway(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
-	return eg.Transcribe(OpenAPITranscriptionModeGateway, opts...)
+	return t.Transcribe(OpenAPITranscriptionModeGateway, opts...)
 }
 
 // TranscribePublicOpenAPIDocument emits a public OpenAPI 3.1 document.
-func (eg EndpointGroup) TranscribePublicOpenAPIDocument(
+func (t GroupTarget) TranscribePublicOpenAPIDocument(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
-	return eg.TranscribeDocument(OpenAPITranscriptionModePublic, opts...)
+	return t.TranscribeDocument(OpenAPITranscriptionModePublic, opts...)
 }
 
 // TranscribeGCPGatewayDocument emits a GCP API Gateway Swagger 2.0 document.
-func (eg EndpointGroup) TranscribeGCPGatewayDocument(
+func (t GroupTarget) TranscribeGCPGatewayDocument(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
-	return eg.TranscribeDocument(OpenAPITranscriptionModeGCPGateway, opts...)
+	return t.TranscribeDocument(OpenAPITranscriptionModeGCPGateway, opts...)
 }
 
-// TranscribeGatewayDocument emits a gateway document.
-func (eg EndpointGroup) TranscribeGatewayDocument(
+// TranscribeGatewayDocument emits the default gateway document.
+//
+// Deprecated: use TranscribeGCPGatewayDocument when generating GCP API Gateway
+// specs.
+func (t GroupTarget) TranscribeGatewayDocument(
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
-	return eg.TranscribeDocument(OpenAPITranscriptionModeGateway, opts...)
+	return t.TranscribeDocument(OpenAPITranscriptionModeGateway, opts...)
 }
 
 // Transcribe emits OpenAPI path entries for every endpoint in the group.
-func (eg EndpointGroup) Transcribe(
+func (t GroupTarget) Transcribe(
 	mode OpenAPITranscriptionMode,
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIPaths, error) {
 	cfg := openAPIConfig(opts)
-	return eg.transcribe(mode, cfg)
+	return transcribeGroup(t.group, mode, cfg)
 }
 
 // TranscribeDocument emits a document-level OpenAPI schema for the endpoint group.
-func (eg EndpointGroup) TranscribeDocument(
+func (t GroupTarget) TranscribeDocument(
 	mode OpenAPITranscriptionMode,
 	opts ...OpenAPITranscriptionOption,
 ) (OpenAPIDocument, error) {
 	cfg := openAPIConfig(opts)
-	paths, err := eg.transcribe(mode, cfg)
+	paths, err := transcribeGroup(t.group, mode, cfg)
 	if err != nil {
 		return OpenAPIDocument{}, err
 	}
@@ -310,7 +353,8 @@ func (eg EndpointGroup) TranscribeDocument(
 	return openAPIDocument(mode, cfg, paths)
 }
 
-func (eg EndpointGroup) transcribe(
+func transcribeGroup(
+	eg httpapi.EndpointGroup,
 	mode OpenAPITranscriptionMode,
 	cfg openAPITranscriptionConfig,
 ) (OpenAPIPaths, error) {
@@ -321,14 +365,12 @@ func (eg EndpointGroup) transcribe(
 	cfg.PathPrefix = prefix
 
 	paths := OpenAPIPaths{}
-	for _, endpoint := range eg.Endpoints {
-		endpoint = eg.endpointWithGroupMetadata(endpoint)
-		endpoint.route = endpoint.routeSpec().withDefaults(eg.Route)
+	for _, endpoint := range eg.ResolvedEndpoints() {
 		if mode == OpenAPITranscriptionModePublic && endpoint.IsInternal() {
 			continue
 		}
 
-		endpointPaths, err := endpoint.transcribe(mode, cfg)
+		endpointPaths, err := transcribeEndpoint(endpoint, mode, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -340,7 +382,8 @@ func (eg EndpointGroup) transcribe(
 	return paths, nil
 }
 
-func (e Endpoint) transcribe(
+func transcribeEndpoint(
+	e httpapi.Endpoint,
 	mode OpenAPITranscriptionMode,
 	cfg openAPITranscriptionConfig,
 ) (OpenAPIPaths, error) {
@@ -348,33 +391,34 @@ func (e Endpoint) transcribe(
 		return nil, ErrInternalEndpointPublicOpenAPI
 	}
 
-	path, err := joinOpenAPIPath(cfg.PathPrefix, e.pattern)
+	path, err := joinOpenAPIPath(cfg.PathPrefix, e.Pattern())
 	if err != nil {
 		return nil, err
 	}
 
-	operation, err := e.openAPIOperation(mode, path, cfg)
+	operation, err := openAPIOperation(e, mode, path, cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	item := OpenAPIPathItem{}
-	if err := item.setOperation(e.method, operation); err != nil {
+	if err := item.setOperation(e.Method(), operation); err != nil {
 		return nil, err
 	}
 
 	return OpenAPIPaths{path: item}, nil
 }
 
-func (e Endpoint) openAPIOperation(
+func openAPIOperation(
+	e httpapi.Endpoint,
 	mode OpenAPITranscriptionMode,
 	path string,
 	cfg openAPITranscriptionConfig,
 ) (OpenAPIOperation, error) {
-	route := e.routeSpec()
+	route := e.RouteSpec()
 	operation := OpenAPIOperation{
-		OperationID: defaultOperationID(e.method, path),
-		Summary:     fmt.Sprintf("%s %s", e.method, path),
+		OperationID: defaultOperationID(e.Method(), path),
+		Summary:     fmt.Sprintf("%s %s", e.Method(), path),
 		Responses:   placeholderResponses(),
 	}
 	if route.OperationID != "" {
@@ -399,16 +443,16 @@ func (e Endpoint) openAPIOperation(
 		return operation, nil
 	case OpenAPITranscriptionModeGCPGateway:
 		backend, err := gcpGatewayBackend(
-			route.Backend.withDefaults(RouteBackend{
-				Address:  cfg.GCPGatewayBackendAddr,
-				PathMode: RoutePathModeAppend,
+			routeBackendWithDefaults(route.Backend, httpapi.RouteBackend{
+				Address:  cfg.GatewayBackendAddress,
+				PathMode: httpapi.RoutePathModeAppend,
 			}),
 		)
 		if err != nil {
 			return OpenAPIOperation{}, err
 		}
-		operation.Consumes = contentTypesForOpenAPI(e.accepts)
-		operation.Produces = []string{ApplicationJson}
+		operation.Consumes = contentTypesForOpenAPI(e.AcceptedContentTypes())
+		operation.Produces = []string{httpapi.ApplicationJson}
 		operation.XGoogleBackend = &backend
 		return operation, nil
 	default:
@@ -420,12 +464,50 @@ func (e Endpoint) openAPIOperation(
 }
 
 func contentTypesForOpenAPI(contentTypes []ContentType) []string {
-	contentTypes = normalizeEndpointContentTypeSlice(contentTypes)
+	contentTypes = normalizeContentTypes(contentTypes)
 	values := make([]string, 0, len(contentTypes))
 	for _, contentType := range contentTypes {
 		values = append(values, string(contentType))
 	}
 	return values
+}
+
+func normalizeContentTypes(contentTypes []ContentType) []ContentType {
+	if len(contentTypes) == 0 {
+		return []ContentType{ApplicationJson}
+	}
+
+	normalized := make([]ContentType, 0, len(contentTypes))
+	seen := map[ContentType]bool{}
+	for _, contentType := range contentTypes {
+		contentType = ContentType(strings.TrimSpace(string(contentType)))
+		if contentType == "" {
+			contentType = ApplicationJson
+		}
+		if seen[contentType] {
+			continue
+		}
+		seen[contentType] = true
+		normalized = append(normalized, contentType)
+	}
+	return normalized
+}
+
+func routeBackendWithDefaults(backend, defaults RouteBackend) RouteBackend {
+	backend = normalizeRouteBackend(backend)
+	defaults = normalizeRouteBackend(defaults)
+
+	merged := defaults
+	if backend.Address != "" {
+		merged.Address = backend.Address
+	}
+	if backend.PathMode != "" {
+		merged.PathMode = backend.PathMode
+	}
+	if backend.Timeout != 0 {
+		merged.Timeout = backend.Timeout
+	}
+	return normalizeRouteBackend(merged)
 }
 
 func gcpGatewayBackend(backend RouteBackend) (GCPGatewayBackend, error) {
@@ -476,6 +558,28 @@ func gcpGatewayBackendDeadline(backend RouteBackend) (*float64, error) {
 	return &seconds, nil
 }
 
+func normalizeRouteBackend(backend RouteBackend) RouteBackend {
+	backend.Address = strings.TrimSpace(backend.Address)
+	backend.PathMode = normalizeRoutePathMode(backend.PathMode)
+	if backend.Timeout < 0 {
+		panic(fmt.Sprintf("httpapi: route backend timeout cannot be negative: %s", backend.Timeout))
+	}
+	return backend
+}
+
+func normalizeRoutePathMode(mode RoutePathMode) RoutePathMode {
+	switch strings.TrimSpace(strings.ToLower(string(mode))) {
+	case "":
+		return ""
+	case string(RoutePathModeAppend):
+		return RoutePathModeAppend
+	case string(RoutePathModeConstant):
+		return RoutePathModeConstant
+	default:
+		panic(fmt.Sprintf("httpapi: unsupported route path mode %q", mode))
+	}
+}
+
 func openAPIConfig(opts []OpenAPITranscriptionOption) openAPITranscriptionConfig {
 	cfg := openAPITranscriptionConfig{
 		DocumentTitle:       defaultOpenAPIDocumentTitle,
@@ -515,7 +619,7 @@ func openAPIDocument(
 		return doc, nil
 	case OpenAPITranscriptionModeGCPGateway:
 		doc.Swagger = defaultGCPGatewayDocumentSpecVersion
-		doc.Host = cfg.GCPGatewayHost
+		doc.Host = cfg.GatewayHost
 		doc.Schemes = []string{defaultGCPGatewayScheme}
 		doc.Produces = []string{ApplicationJson}
 		return doc, nil

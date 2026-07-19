@@ -90,6 +90,20 @@ func (eg EndpointGroup) Authorization() AuthorizationRequirement {
 func (eg EndpointGroup) RequiresAuthorization() bool { return eg.Auth.Required }
 func (eg EndpointGroup) RouteSpec() RouteSpec        { return eg.Route }
 
+// ResolvedEndpoints returns endpoints with group-level metadata applied.
+// Transcribers and other read-only consumers should use this instead of
+// inspecting Endpoints directly when group defaults matter.
+func (eg EndpointGroup) ResolvedEndpoints() []Endpoint {
+	if len(eg.Endpoints) == 0 {
+		return nil
+	}
+	endpoints := make([]Endpoint, 0, len(eg.Endpoints))
+	for _, endpoint := range eg.Endpoints {
+		endpoints = append(endpoints, eg.endpointWithGroupMetadata(endpoint))
+	}
+	return endpoints
+}
+
 // Add adds a new endpoint to the group. At the moment, it doesn't
 // ensure that duplicates are rejected. This means that if duplicate
 // endpoints are added (by path pattern), then the latest will be

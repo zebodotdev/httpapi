@@ -144,6 +144,7 @@ func (eg EndpointGroup) endpointWithGroupMetadata(endpoint Endpoint) Endpoint {
 	}
 
 	endpoint.mutableTimeoutPolicy().inheritDefaults(eg.Timeout)
+	endpoint.route = endpoint.routeSpec().withDefaults(eg.Route)
 
 	return endpoint.withRebuiltHandler()
 }

@@ -23,7 +23,7 @@ type RouteBackend struct {
 	Address  string        `json:"address,omitempty" yaml:"address,omitempty"`
 	PathMode RoutePathMode `json:"path_mode,omitempty" yaml:"path_mode,omitempty"`
 	// Timeout is intentionally a Go duration. Spec writers translate it into
-	// provider-specific fields such as GCP API Gateway's backend deadline.
+	// their target-specific backend timeout fields.
 	Timeout time.Duration `json:"-" yaml:"-"`
 }
 
