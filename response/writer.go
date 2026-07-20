@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"os"
 	"time"
-
-	"github.com/zebodotdev/httpapi/endpoint"
 )
 
 const (
@@ -28,9 +26,9 @@ var logr = log.New(os.Stdout, "[httpapi/response]: ", log.Flags()|log.Llongfile)
 
 // WriteOptions controls how a Res is written to the HTTP connection.
 type WriteOptions struct {
-	RequestID string
-	Duration  time.Duration
-	Timeout   endpoint.TimeoutSpec
+	RequestID    string
+	Duration     time.Duration
+	WriteTimeout time.Duration
 }
 
 // WriteResult describes the completed response write.
@@ -92,7 +90,7 @@ func WriteResponseBody(
 	body []byte,
 	opts WriteOptions,
 ) (WriteResult, error) {
-	writeDeadlineSet := setEndpointWriteDeadline(w, opts.RequestID, opts.Timeout)
+	writeDeadlineSet := setEndpointWriteDeadline(w, opts.RequestID, opts.WriteTimeout)
 	if writeDeadlineSet {
 		defer clearEndpointWriteDeadline(w, opts.RequestID)
 	}
@@ -115,7 +113,7 @@ func WriteResponseStream(
 	res *Res,
 	opts WriteOptions,
 ) (WriteResult, error) {
-	writeDeadlineSet := setEndpointWriteDeadline(w, opts.RequestID, opts.Timeout)
+	writeDeadlineSet := setEndpointWriteDeadline(w, opts.RequestID, opts.WriteTimeout)
 	if writeDeadlineSet {
 		defer clearEndpointWriteDeadline(w, opts.RequestID)
 	}
@@ -160,17 +158,19 @@ type endpointDeadlineSetter func(*http.ResponseController, time.Time) error
 func setEndpointWriteDeadline(
 	w http.ResponseWriter,
 	requestID string,
-	timeout endpoint.TimeoutSpec,
+	timeout time.Duration,
 ) bool {
-	timeout = endpoint.NormalizeTimeoutSpec(timeout)
-	if timeout.Write == 0 {
+	if timeout < 0 {
+		panic("httpapi/response: write timeout cannot be negative")
+	}
+	if timeout == 0 {
 		return false
 	}
 
 	return applyEndpointDeadline(
 		w,
 		requestID,
-		time.Now().Add(timeout.Write),
+		time.Now().Add(timeout),
 		"write",
 		(*http.ResponseController).SetWriteDeadline,
 	)

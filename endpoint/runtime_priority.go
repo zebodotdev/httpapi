@@ -1,15 +1,13 @@
-package httpapi
-
-import endpointpkg "github.com/zebodotdev/httpapi/endpoint"
+package endpoint
 
 // EndpointPriority captures how important an endpoint is to service operations.
-type EndpointPriority = endpointpkg.Priority
+type EndpointPriority = Priority
 
 const (
-	EndpointPriorityCritical EndpointPriority = endpointpkg.PriorityCritical
-	EndpointPriorityHigh     EndpointPriority = endpointpkg.PriorityHigh
-	EndpointPriorityStandard EndpointPriority = endpointpkg.PriorityStandard
-	EndpointPriorityLow      EndpointPriority = endpointpkg.PriorityLow
+	EndpointPriorityCritical EndpointPriority = PriorityCritical
+	EndpointPriorityHigh     EndpointPriority = PriorityHigh
+	EndpointPriorityStandard EndpointPriority = PriorityStandard
+	EndpointPriorityLow      EndpointPriority = PriorityLow
 )
 
 type endpointPriorityPolicy struct {
@@ -41,11 +39,11 @@ func (eg *EndpointGroup) SetPriority(priority EndpointPriority) {
 }
 
 func requiredEndpointPriority(priority EndpointPriority) EndpointPriority {
-	return endpointpkg.RequiredPriority(priority)
+	return RequiredPriority(priority)
 }
 
 func normalizeEndpointPriority(priority EndpointPriority) EndpointPriority {
-	return endpointpkg.NormalizePriority(priority)
+	return NormalizePriority(priority)
 }
 
 func (e Endpoint) priorityPolicy() endpointPriorityPolicy {

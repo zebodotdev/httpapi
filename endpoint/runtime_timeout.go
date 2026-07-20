@@ -1,4 +1,4 @@
-package httpapi
+package endpoint
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	e "github.com/zebodotdev/httpapi/erreur"
+	responsepkg "github.com/zebodotdev/httpapi/response"
 )
 
 // EndpointTimeoutSpec declares runtime timeout budgets for one endpoint.
@@ -15,7 +15,7 @@ import (
 // These budgets are enforced by the in-process HTTP wrapper. They are separate
 // from RouteBackend.Timeout, which only describes generated gateway/backend
 // deadlines for transcribed route specs.
-type EndpointTimeoutSpec = endpointpkg.TimeoutSpec
+type EndpointTimeoutSpec = TimeoutSpec
 
 // EndpointTimeoutHandler renders the response for an endpoint whose handler
 // context exceeded its configured timeout before a response was produced.
@@ -116,7 +116,7 @@ func (p *endpointTimeoutPolicy) inheritHandler(handler EndpointTimeoutHandler) {
 
 // DefaultEndpointTimeoutHandler renders the default timeout response.
 func DefaultEndpointTimeoutHandler(req *Req) {
-	RenderErr(req, e.RequestTimeout())
+	responsepkg.RenderErr(req, e.RequestTimeout())
 }
 
 func (e Endpoint) handleTimeout(req *Req) {
@@ -130,7 +130,7 @@ func (e Endpoint) handleTimeout(req *Req) {
 }
 
 func normalizeEndpointTimeoutSpec(spec EndpointTimeoutSpec) EndpointTimeoutSpec {
-	return endpointpkg.NormalizeTimeoutSpec(spec)
+	return NormalizeTimeoutSpec(spec)
 }
 
 func requestWithEndpointHandlerTimeout(

@@ -4,16 +4,14 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"github.com/zebodotdev/httpapi/endpoint"
 )
 
 // Content type aliases kept here so response rendering does not depend on the
 // root httpapi package.
 const (
-	ApplicationJson = endpoint.ApplicationJson
-	TextHTML        = endpoint.TextHTML
-	TextPlain       = endpoint.TextPlain
+	ApplicationJson = "application/json"
+	TextHTML        = "text/html"
+	TextPlain       = "text/plain; charset=utf-8"
 )
 
 // Res is the response object populated by handlers and written by endpoint

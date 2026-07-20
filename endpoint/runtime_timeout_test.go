@@ -1,4 +1,4 @@
-package httpapi
+package endpoint
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	responsepkg "github.com/zebodotdev/httpapi/response"
 )
 
 func TestDefineEndpointTimeoutSpec(t *testing.T) {
@@ -279,7 +281,7 @@ func TestEndpointHandlerUsesCustomTimeoutHandler(t *testing.T) {
 			Handler: time.Nanosecond,
 		},
 		TimeoutHandler: func(r *Req) {
-			RenderJSON(r, http.StatusAccepted, map[string]string{
+			responsepkg.RenderJSON(r, http.StatusAccepted, map[string]string{
 				"code": "queued_after_timeout",
 			})
 		},
@@ -333,7 +335,7 @@ func TestEndpointGroupTimeoutHandlerAppliesToResolvedHandler(t *testing.T) {
 			Handler: time.Nanosecond,
 		},
 		TimeoutHandler: func(r *Req) {
-			RenderJSON(r, http.StatusAccepted, map[string]string{
+			responsepkg.RenderJSON(r, http.StatusAccepted, map[string]string{
 				"code": "group_timeout",
 			})
 		},
@@ -364,7 +366,7 @@ func TestEndpointGroupTimeoutHandlerCanBeCleared(t *testing.T) {
 		},
 	}
 	group.ConfigureTimeoutHandler(func(r *Req) {
-		RenderJSON(r, http.StatusAccepted, map[string]string{
+		responsepkg.RenderJSON(r, http.StatusAccepted, map[string]string{
 			"code": "group_timeout",
 		})
 	})

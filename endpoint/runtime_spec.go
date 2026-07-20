@@ -1,6 +1,4 @@
-package httpapi
-
-import endpointpkg "github.com/zebodotdev/httpapi/endpoint"
+package endpoint
 
 // EndpointSpec is the declarative contract for one HTTP endpoint.
 //
@@ -85,31 +83,31 @@ func defineEndpointWithOptions(spec EndpointSpec, opts ...EndpointOption) Endpoi
 }
 
 func normalizeEndpointMethod(method HttpMethod) HttpMethod {
-	return endpointpkg.NormalizeMethod(method)
+	return NormalizeMethod(method)
 }
 
 func normalizeEndpointContentType(contentType ContentType) ContentType {
-	return endpointpkg.NormalizeContentType(contentType)
+	return NormalizeContentType(contentType)
 }
 
 func normalizeEndpointContentTypes(primary ContentType, additional ...ContentType) []ContentType {
-	return endpointpkg.NormalizeContentTypes(primary, additional...)
+	return NormalizeContentTypes(primary, additional...)
 }
 
 func normalizeEndpointContentTypeSlice(contentTypes []ContentType) []ContentType {
-	return endpointpkg.NormalizeContentTypeSlice(contentTypes)
+	return NormalizeContentTypeSlice(contentTypes)
 }
 
 func primaryContentType(contentTypes []ContentType) ContentType {
-	return endpointpkg.PrimaryContentType(contentTypes)
+	return PrimaryContentType(contentTypes)
 }
 
 func cloneContentTypes(contentTypes []ContentType) []ContentType {
-	return endpointpkg.CloneContentTypes(contentTypes)
+	return CloneContentTypes(contentTypes)
 }
 
 func joinContentTypes(contentTypes []ContentType) string {
-	return endpointpkg.JoinContentTypes(contentTypes)
+	return JoinContentTypes(contentTypes)
 }
 
 // WithAcceptedContentTypes sets every accepted request content type.
@@ -121,9 +119,9 @@ func WithAcceptedContentTypes(contentTypes ...ContentType) EndpointOption {
 }
 
 func cloneEndpointAuthKeys(keys map[string]bool) map[string]bool {
-	return endpointpkg.CloneAuthKeys(keys)
+	return CloneAuthKeys(keys)
 }
 
 func validateEndpointContentType(actual ContentType, expected []ContentType) error {
-	return endpointpkg.ValidateContentType(actual, expected)
+	return ValidateContentType(actual, expected)
 }

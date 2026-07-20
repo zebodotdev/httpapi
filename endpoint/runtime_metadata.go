@@ -1,4 +1,4 @@
-package httpapi
+package endpoint
 
 import authpkg "github.com/zebodotdev/httpapi/auth"
 

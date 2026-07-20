@@ -3,6 +3,7 @@ package httpapi
 import (
 	"io"
 	"net/http"
+	"time"
 
 	e "github.com/zebodotdev/httpapi/erreur"
 	responsepkg "github.com/zebodotdev/httpapi/response"
@@ -10,8 +11,15 @@ import (
 
 type Res = responsepkg.Res
 type ErrRes = responsepkg.ErrRes
-type ResponseWriteOptions = responsepkg.WriteOptions
 type ResponseWriteResult = responsepkg.WriteResult
+
+// ResponseWriteOptions preserves the root httpapi write options shape while the
+// response package owns the concrete writer implementation.
+type ResponseWriteOptions struct {
+	RequestID string
+	Duration  time.Duration
+	Timeout   EndpointTimeoutSpec
+}
 
 func RenderJSON(r *Req, status int, body any) {
 	responsepkg.RenderJSON(r, status, body)
@@ -34,7 +42,7 @@ func WriteResponse(
 	res *Res,
 	opts ResponseWriteOptions,
 ) (ResponseWriteResult, error) {
-	return responsepkg.WriteResponse(w, res, opts)
+	return responsepkg.WriteResponse(w, res, responseWriteOptions(opts))
 }
 
 func EncodeResponseBody(res *Res) ([]byte, error) {
@@ -47,7 +55,7 @@ func WriteResponseBody(
 	body []byte,
 	opts ResponseWriteOptions,
 ) (ResponseWriteResult, error) {
-	return responsepkg.WriteResponseBody(w, res, body, opts)
+	return responsepkg.WriteResponseBody(w, res, body, responseWriteOptions(opts))
 }
 
 func WriteResponseStream(
@@ -55,5 +63,13 @@ func WriteResponseStream(
 	res *Res,
 	opts ResponseWriteOptions,
 ) (ResponseWriteResult, error) {
-	return responsepkg.WriteResponseStream(w, res, opts)
+	return responsepkg.WriteResponseStream(w, res, responseWriteOptions(opts))
+}
+
+func responseWriteOptions(opts ResponseWriteOptions) responsepkg.WriteOptions {
+	return responsepkg.WriteOptions{
+		RequestID:    opts.RequestID,
+		Duration:     opts.Duration,
+		WriteTimeout: normalizeEndpointTimeoutSpec(opts.Timeout).Write,
+	}
 }

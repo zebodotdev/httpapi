@@ -1,4 +1,4 @@
-package httpapi
+package endpoint
 
 import (
 	"fmt"
@@ -12,7 +12,11 @@ const (
 	endpointAuthorizationDeniedCode            = "endpoint_authorization_denied"
 	internalEndpointAuthenticationRequiredCode = "internal_endpoint_authentication_required"
 	internalEndpointAuthorizationDeniedCode    = "internal_endpoint_authorization_denied"
+	authAuditTypeEndpoint                      = authpkg.AuditTypeEndpoint
 )
+
+type AuthFailure = authpkg.Failure
+type Session = authpkg.Session
 
 func (e Endpoint) accessError(r *Req) *errresp.Error {
 	policy := e.accessPolicy()

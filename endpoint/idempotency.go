@@ -1,4 +1,4 @@
-package httpapi
+package endpoint
 
 import (
 	"context"
@@ -15,9 +15,12 @@ import (
 	"time"
 
 	e "github.com/zebodotdev/httpapi/erreur"
+	requestpkg "github.com/zebodotdev/httpapi/request"
+	responsepkg "github.com/zebodotdev/httpapi/response"
 )
 
 const (
+	idempotencyHeaderKey      = "idempotency-key"
 	idempotencyReplayHeader   = "Idempotent-Replayed"
 	idempotencyStatusReserved = "reserved"
 	idempotencyStatusComplete = "complete"
@@ -157,7 +160,7 @@ func handleIdempotently(
 	ireq, perr := parseIdempotencyRequest(r, meth, pattern, resolver)
 	if perr != nil {
 		logIdempotencyEvent("validation_failed", r, "", "", "", perr.Code, 0)
-		RenderParamErr(r, perr)
+		responsepkg.RenderParamErr(r, perr)
 		return
 	}
 
@@ -427,13 +430,13 @@ func canonicalOperationFingerprint(body []byte) (string, *e.ErrInvalidParam) {
 func replayOrRejectIdempotentRequest(r *Req, existing *IdempotencyRecord, incoming *idempotencyRequest) {
 	if existing.Status != idempotencyStatusComplete {
 		logIdempotencyEvent("in_progress", r, incoming.Scope, incoming.Key, incoming.Fingerprint, "", 0)
-		RenderErr(r, e.IdempotencyInProgress())
+		responsepkg.RenderErr(r, e.IdempotencyInProgress())
 		return
 	}
 
 	if existing.Fingerprint != incoming.Fingerprint {
 		logIdempotencyEvent("conflict", r, incoming.Scope, incoming.Key, incoming.Fingerprint, "", 0)
-		RenderErr(r, e.IdempotencyConflict())
+		responsepkg.RenderErr(r, e.IdempotencyConflict())
 		return
 	}
 
@@ -455,7 +458,7 @@ func replayOrRejectIdempotentRequest(r *Req, existing *IdempotencyRecord, incomi
 }
 
 func renderIdempotencyStoreUnavailable(r *Req) {
-	RenderErr(r, e.IdempotencyStorageUnavailable())
+	responsepkg.RenderErr(r, e.IdempotencyStorageUnavailable())
 }
 
 func idempotencyMismatchErr(first, second string) *e.ErrInvalidParam {
@@ -551,7 +554,7 @@ func paramErrFromError(param string, err *e.Error) *e.ErrInvalidParam {
 func idempotencyScopeWithAppID(r *Req, meth HttpMethod, pattern, appID string) string {
 	appID = strings.TrimSpace(appID)
 	if appID == "" {
-		appID = unAuthzReqAppID
+		appID = requestpkg.UnauthorizedAppID
 	}
 
 	path := ""
