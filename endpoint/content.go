@@ -6,21 +6,44 @@ import (
 	"strings"
 )
 
+// Method is a normalized HTTP method accepted by an Endpoint.
 type Method = string
+
+// ContentType is a request or response media type string.
 type ContentType = string
 
 const (
+	// OPTIONS is the HTTP OPTIONS method.
 	OPTIONS Method = "OPTIONS"
-	POST    Method = "POST"
-	GET     Method = "GET"
 
-	ApplicationJson           ContentType = "application/json"
+	// POST is the HTTP POST method.
+	POST Method = "POST"
+
+	// GET is the HTTP GET method.
+	GET Method = "GET"
+
+	// ApplicationJson is the default JSON media type accepted by endpoints and
+	// emitted by response helpers.
+	ApplicationJson ContentType = "application/json"
+
+	// ApplicationFormURLEncoded is the standard browser form media type.
 	ApplicationFormURLEncoded ContentType = "application/x-www-form-urlencoded"
-	MultipartFormData         ContentType = "multipart/form-data"
-	TextHTML                  ContentType = "text/html"
-	TextPlain                 ContentType = "text/plain; charset=utf-8"
+
+	// MultipartFormData is the media type used for file uploads and multipart
+	// forms.
+	MultipartFormData ContentType = "multipart/form-data"
+
+	// TextHTML is the HTML response media type.
+	TextHTML ContentType = "text/html"
+
+	// TextPlain is the plain text response media type used by httpapi.
+	TextPlain ContentType = "text/plain; charset=utf-8"
 )
 
+// NormalizeMethod trims and uppercases a method and returns a supported method.
+//
+// Endpoint runtime currently supports GET and POST handlers. Unsupported
+// values panic so bad endpoint definitions fail during application startup.
 func NormalizeMethod(method Method) Method {
 	normalized := Method(strings.ToUpper(strings.TrimSpace(string(method))))
 	switch normalized {
@@ -34,6 +57,8 @@ func NormalizeMethod(method Method) Method {
 	}
 }
 
+// NormalizeContentType trims a media type and applies ApplicationJson when it
+// is empty.
 func NormalizeContentType(contentType ContentType) ContentType {
 	contentType = ContentType(strings.TrimSpace(string(contentType)))
 	if contentType == "" {
@@ -43,6 +68,10 @@ func NormalizeContentType(contentType ContentType) ContentType {
 	return contentType
 }
 
+// NormalizeContentTypes returns a de-duplicated ordered content-type list.
+//
+// The primary type is included first when it is non-empty, or when no
+// additional types are provided.
 func NormalizeContentTypes(primary ContentType, additional ...ContentType) []ContentType {
 	var contentTypes []ContentType
 	seen := map[ContentType]bool{}
@@ -63,6 +92,9 @@ func NormalizeContentTypes(primary ContentType, additional ...ContentType) []Con
 	return contentTypes
 }
 
+// NormalizeContentTypeSlice returns a normalized copy of a content-type slice.
+//
+// Empty input returns a single ApplicationJson entry.
 func NormalizeContentTypeSlice(contentTypes []ContentType) []ContentType {
 	if len(contentTypes) == 0 {
 		return []ContentType{ApplicationJson}
@@ -81,6 +113,8 @@ func NormalizeContentTypeSlice(contentTypes []ContentType) []ContentType {
 	return normalized
 }
 
+// PrimaryContentType returns the first normalized content type or
+// ApplicationJson when the slice is empty.
 func PrimaryContentType(contentTypes []ContentType) ContentType {
 	if len(contentTypes) == 0 {
 		return ApplicationJson
@@ -88,6 +122,7 @@ func PrimaryContentType(contentTypes []ContentType) ContentType {
 	return NormalizeContentType(contentTypes[0])
 }
 
+// CloneContentTypes returns a copy of a content-type slice.
 func CloneContentTypes(contentTypes []ContentType) []ContentType {
 	if len(contentTypes) == 0 {
 		return nil
@@ -95,6 +130,8 @@ func CloneContentTypes(contentTypes []ContentType) []ContentType {
 	return append([]ContentType(nil), contentTypes...)
 }
 
+// JoinContentTypes formats a normalized content-type list for logs and error
+// messages.
 func JoinContentTypes(contentTypes []ContentType) string {
 	if len(contentTypes) == 0 {
 		return string(ApplicationJson)
@@ -107,6 +144,7 @@ func JoinContentTypes(contentTypes []ContentType) string {
 	return strings.Join(parts, ", ")
 }
 
+// CloneAuthKeys returns a copy of endpoint authorization metadata keys.
 func CloneAuthKeys(keys map[string]bool) map[string]bool {
 	if len(keys) == 0 {
 		return nil
@@ -118,6 +156,9 @@ func CloneAuthKeys(keys map[string]bool) map[string]bool {
 	return cloned
 }
 
+// ValidateContentType reports whether actual matches one of the expected media
+// types. Matching is substring-based so values with parameters, such as
+// application/json; charset=utf-8, satisfy the base media type.
 func ValidateContentType(actual ContentType, expected []ContentType) error {
 	actual = NormalizeContentType(actual)
 	expected = NormalizeContentTypeSlice(expected)

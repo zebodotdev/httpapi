@@ -6,13 +6,26 @@ import (
 )
 
 const (
-	DefaultBearerAuthorizationScheme  = "Bearer"
+	// DefaultBearerAuthorizationScheme is the Authorization header scheme used
+	// for regular bearer credentials.
+	DefaultBearerAuthorizationScheme = "Bearer"
+
+	// DefaultServiceAuthorizationScheme is the Authorization header scheme used
+	// for service-to-service credentials.
 	DefaultServiceAuthorizationScheme = "Service"
 )
 
+// AuthorizationSchemes configures how httpapi interprets Authorization header
+// scheme prefixes.
 type AuthorizationSchemes struct {
-	Bearer         string
-	Service        string
+	// Bearer is the primary scheme for bearer-token authentication.
+	Bearer string
+
+	// Service is the primary scheme for service-to-service authentication.
+	Service string
+
+	// ServiceAliases are additional schemes accepted as service authentication.
+	// They are useful during migrations away from older service scheme names.
 	ServiceAliases []string
 }
 
@@ -43,12 +56,16 @@ func ConfigureAuthorizationSchemes(schemes AuthorizationSchemes) func() {
 	}
 }
 
+// CurrentAuthorizationSchemes returns a copy of the globally configured
+// Authorization header schemes.
 func CurrentAuthorizationSchemes() AuthorizationSchemes {
 	authorizationSchemesState.RLock()
 	defer authorizationSchemesState.RUnlock()
 	return cloneAuthorizationSchemes(authorizationSchemesState.schemes)
 }
 
+// NormalizeAuthorizationSchemes trims configured schemes, applies defaults,
+// removes duplicate aliases, and returns a copy safe for storage.
 func NormalizeAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSchemes {
 	schemes.Bearer = strings.TrimSpace(schemes.Bearer)
 	if schemes.Bearer == "" {
@@ -90,6 +107,8 @@ func cloneAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationScheme
 	return schemes
 }
 
+// ServiceAuthorizationSchemes returns the primary service scheme followed by
+// non-duplicate aliases in their configured order.
 func (s AuthorizationSchemes) ServiceAuthorizationSchemes() []string {
 	s = NormalizeAuthorizationSchemes(s)
 	schemes := make([]string, 0, 1+len(s.ServiceAliases))

@@ -27,7 +27,10 @@ const (
 	idempotencyRetention      = 24 * time.Hour
 )
 
+// RequestMeta is the audit envelope metadata captured for idempotent requests.
 type RequestMeta struct {
+	// IdempotencyKey is the request idempotency key recorded with the audit
+	// envelope.
 	IdempotencyKey string `json:"idempotency_key,omitzero"`
 }
 
@@ -42,42 +45,94 @@ type idempotencyRequest struct {
 	ExpiresAt   time.Time
 }
 
+// IdempotencyScopeResolver computes the storage scope for a request's
+// idempotency key.
+//
+// Return an ErrInvalidParam when the request cannot safely produce a scope. The
+// default scope uses the service namespace, endpoint method, endpoint pattern,
+// and authenticated app/session context.
 type IdempotencyScopeResolver func(*Req) (string, *e.ErrInvalidParam)
 
+// IdempotencyRecord is the storage representation for one idempotency key.
 type IdempotencyRecord struct {
-	Scope          string      `json:"scope"`
-	Key            string      `json:"idempotency_key"`
-	Fingerprint    string      `json:"request_fingerprint"`
-	Status         string      `json:"status"`
-	RequestID      string      `json:"request_id,omitempty"`
-	ResponseStatus int         `json:"response_status,omitempty"`
-	ContentType    string      `json:"content_type,omitempty"`
+	// Scope partitions idempotency keys so the same client key can be reused
+	// for unrelated operations.
+	Scope string `json:"scope"`
+
+	// Key is the caller-provided idempotency key.
+	Key string `json:"idempotency_key"`
+
+	// Fingerprint is the normalized operation fingerprint used to reject key
+	// reuse with a different request payload.
+	Fingerprint string `json:"request_fingerprint"`
+
+	// Status records whether the operation is reserved or complete.
+	Status string `json:"status"`
+
+	// RequestID is the httpapi request that reserved the key.
+	RequestID string `json:"request_id,omitempty"`
+
+	// ResponseStatus is the HTTP status code of the stored successful response.
+	ResponseStatus int `json:"response_status,omitempty"`
+
+	// ContentType is the response content type stored for replay.
+	ContentType string `json:"content_type,omitempty"`
+
+	// ResponseHeader stores replayable response headers.
 	ResponseHeader http.Header `json:"response_header,omitempty"`
-	ResponseBody   string      `json:"response_body,omitempty"`
-	CreatedAt      time.Time   `json:"created_at"`
-	CompletedAt    *time.Time  `json:"completed_at,omitempty"`
-	ExpiresAt      time.Time   `json:"expires_at"`
-	ExpiresAtUnix  int64       `json:"expires_at_unix"`
+
+	// ResponseBody stores the encoded response body for replay.
+	ResponseBody string `json:"response_body,omitempty"`
+
+	// CreatedAt is when the reservation was created.
+	CreatedAt time.Time `json:"created_at"`
+
+	// CompletedAt is when the successful response was persisted.
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+
+	// ExpiresAt is when the idempotency record may be discarded.
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// ExpiresAtUnix is ExpiresAt as a Unix timestamp for stores that support TTL
+	// indexes.
+	ExpiresAtUnix int64 `json:"expires_at_unix"`
 }
 
+// IdempotencyStore is the persistence contract used by idempotent endpoints.
+//
+// Reserve must atomically create a reservation or return the existing record
+// for the same scope/key. Complete stores a successful response for future
+// replay. Release removes an incomplete reservation when the handler failed or
+// produced a non-replayable response.
 type IdempotencyStore interface {
+	// Reserve atomically reserves a scope/key pair or returns the existing
+	// record when another request already reserved it.
 	Reserve(context.Context, *IdempotencyRecord) (*IdempotencyRecord, error)
+
+	// Complete marks a reserved record complete and stores its replay response.
 	Complete(context.Context, *IdempotencyRecord) error
+
+	// Release removes an incomplete reservation.
 	Release(context.Context, string, string) error
 }
 
+// ErrIdempotencyStoreNotConfigured is returned when an idempotent endpoint runs
+// before ConfigureIdempotencyStore installs a concrete store.
 var ErrIdempotencyStoreNotConfigured = errors.New("httpapi: idempotency_store_not_configured")
 
 type unavailableIdempotencyStore struct{}
 
+// Reserve fails because no concrete idempotency store is configured.
 func (unavailableIdempotencyStore) Reserve(context.Context, *IdempotencyRecord) (*IdempotencyRecord, error) {
 	return nil, ErrIdempotencyStoreNotConfigured
 }
 
+// Complete fails because no concrete idempotency store is configured.
 func (unavailableIdempotencyStore) Complete(context.Context, *IdempotencyRecord) error {
 	return ErrIdempotencyStoreNotConfigured
 }
 
+// Release fails because no concrete idempotency store is configured.
 func (unavailableIdempotencyStore) Release(context.Context, string, string) error {
 	return ErrIdempotencyStoreNotConfigured
 }
@@ -96,7 +151,9 @@ func currentIdempotencyStore() IdempotencyStore {
 }
 
 // ConfigureIdempotencyStore installs the package-level idempotency store.
-// Idempotent endpoints fail closed until a store is configured.
+//
+// Idempotent endpoints fail closed until a store is configured. The returned
+// function restores the previous store for tests and temporary overrides.
 func ConfigureIdempotencyStore(store IdempotencyStore) func() {
 	if store == nil {
 		store = unavailableIdempotencyStore{}
@@ -119,7 +176,10 @@ func setIdempotencyStoreForTest(store IdempotencyStore) func() {
 }
 
 // ConfigureIdempotencyScopeNamespace sets the namespace used in default
-// idempotency scopes. Services should set this to their service name.
+// idempotency scopes.
+//
+// Services should set this to their service name so keys do not collide across
+// binaries sharing the same IdempotencyStore.
 func ConfigureIdempotencyScopeNamespace(namespace string) func() {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {

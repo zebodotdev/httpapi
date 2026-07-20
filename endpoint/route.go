@@ -20,8 +20,14 @@ const (
 
 // RouteBackend identifies the upstream target for a transcribed endpoint.
 type RouteBackend struct {
-	Address  string        `json:"address,omitempty" yaml:"address,omitempty"`
+	// Address is the upstream backend base URL or provider-specific backend
+	// address used by route document writers.
+	Address string `json:"address,omitempty" yaml:"address,omitempty"`
+
+	// PathMode describes whether a generated gateway should append the matched
+	// route path to Address or treat Address as the complete backend target.
 	PathMode RoutePathMode `json:"path_mode,omitempty" yaml:"path_mode,omitempty"`
+
 	// Timeout is intentionally a Go duration. Spec writers translate it into
 	// their target-specific backend timeout fields.
 	Timeout time.Duration `json:"-" yaml:"-"`
@@ -31,11 +37,20 @@ type RouteBackend struct {
 type RouteSpec struct {
 	// OperationID identifies one endpoint operation. Group-level defaults do not
 	// inherit this value because operation IDs must remain unique.
-	OperationID string       `json:"operation_id,omitempty" yaml:"operation_id,omitempty"`
-	Summary     string       `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Backend     RouteBackend `json:"backend" yaml:"backend,omitempty"`
+	OperationID string `json:"operation_id,omitempty" yaml:"operation_id,omitempty"`
+
+	// Summary is a short human-readable operation summary for generated specs.
+	Summary string `json:"summary,omitempty" yaml:"summary,omitempty"`
+
+	// Backend describes where gateway-style transcribers should send matching
+	// requests.
+	Backend RouteBackend `json:"backend" yaml:"backend,omitempty"`
 }
 
+// WithDefaults returns a RouteSpec with empty fields filled from defaults.
+//
+// OperationID is never inherited because generated documents require operation
+// IDs to be unique.
 func (spec RouteSpec) WithDefaults(defaults RouteSpec) RouteSpec {
 	defaults = NormalizeRouteSpec(defaults)
 	spec = NormalizeRouteSpec(spec)
@@ -51,6 +66,7 @@ func (spec RouteSpec) WithDefaults(defaults RouteSpec) RouteSpec {
 	return NormalizeRouteSpec(merged)
 }
 
+// WithDefaults returns a RouteBackend with empty fields filled from defaults.
 func (backend RouteBackend) WithDefaults(defaults RouteBackend) RouteBackend {
 	defaults = NormalizeRouteBackend(defaults)
 	backend = NormalizeRouteBackend(backend)
@@ -69,6 +85,7 @@ func (backend RouteBackend) WithDefaults(defaults RouteBackend) RouteBackend {
 	return NormalizeRouteBackend(merged)
 }
 
+// NormalizeRouteSpec trims route metadata and normalizes its backend.
 func NormalizeRouteSpec(spec RouteSpec) RouteSpec {
 	spec.OperationID = strings.TrimSpace(spec.OperationID)
 	spec.Summary = strings.TrimSpace(spec.Summary)
@@ -77,6 +94,8 @@ func NormalizeRouteSpec(spec RouteSpec) RouteSpec {
 	return spec
 }
 
+// NormalizeRouteBackend trims backend metadata, normalizes its path mode, and
+// panics on negative timeouts.
 func NormalizeRouteBackend(backend RouteBackend) RouteBackend {
 	backend.Address = strings.TrimSpace(backend.Address)
 	backend.PathMode = NormalizeRoutePathMode(backend.PathMode)
@@ -87,6 +106,7 @@ func NormalizeRouteBackend(backend RouteBackend) RouteBackend {
 	return backend
 }
 
+// NormalizeRoutePathMode trims and canonicalizes a route path mode.
 func NormalizeRoutePathMode(mode RoutePathMode) RoutePathMode {
 	switch strings.TrimSpace(strings.ToLower(string(mode))) {
 	case "":

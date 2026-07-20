@@ -2,6 +2,8 @@ package erreur
 
 import "net/http"
 
+// ResourceLocked returns a 409 error when the target resource is locked by
+// another write or workflow.
 func ResourceLocked(code, message, detail string) *Error {
 	return &Error{
 		Message: message,
@@ -15,6 +17,8 @@ func ResourceLocked(code, message, detail string) *Error {
 	}
 }
 
+// OperationInProgress returns a 409 error when the requested operation is
+// already running and should not be started again.
 func OperationInProgress(code, message, detail string) *Error {
 	return &Error{
 		Message: message,

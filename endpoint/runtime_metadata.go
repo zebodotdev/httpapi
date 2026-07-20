@@ -28,13 +28,17 @@ type endpointAccessPolicy struct {
 type EndpointOption func(*Endpoint)
 
 // WithInternal marks an endpoint as internal-only.
+//
+// Internal endpoints can only be called by service sessions. They may still
+// also declare an explicit authorization requirement.
 func WithInternal() EndpointOption {
 	return func(e *Endpoint) {
 		e.mutableAccessPolicy().internal = true
 	}
 }
 
-// WithRequiredAuthorization declares the authorization kind required by an endpoint.
+// WithRequiredAuthorization declares the authorization kind required by an
+// endpoint.
 func WithRequiredAuthorization(kind AuthorizationKind) EndpointOption {
 	auth := requiredAuthorization(kind)
 	return func(e *Endpoint) {
@@ -49,12 +53,14 @@ func WithAuthorization(kind AuthorizationKind) EndpointOption {
 	return WithRequiredAuthorization(kind)
 }
 
-// RequiredAuthorization returns an authorization requirement for an endpoint spec.
+// RequiredAuthorization returns an authorization requirement for an endpoint
+// spec.
 func RequiredAuthorization(kind AuthorizationKind) AuthorizationRequirement {
 	return requiredAuthorization(kind)
 }
 
-// MarkInternal marks all endpoints in the group as internal-only.
+// MarkInternal marks all endpoints in the group as internal-only and rebuilds
+// their runtime wrappers.
 func (eg *EndpointGroup) MarkInternal() {
 	eg.Internal = true
 	for i := range eg.Endpoints {

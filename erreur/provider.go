@@ -2,6 +2,8 @@ package erreur
 
 import "net/http"
 
+// DependencyUnavailable returns a 503 error for a temporarily unavailable
+// internal dependency.
 func DependencyUnavailable(code, message, detail string) *Error {
 	return &Error{
 		Message: message,
@@ -15,6 +17,8 @@ func DependencyUnavailable(code, message, detail string) *Error {
 	}
 }
 
+// ProviderUnavailable returns a 503 error for a temporarily unavailable
+// external provider or processor.
 func ProviderUnavailable(code, message, detail string) *Error {
 	return &Error{
 		Message: message,
@@ -28,6 +32,8 @@ func ProviderUnavailable(code, message, detail string) *Error {
 	}
 }
 
+// ProviderDeclined returns a provider error for an operation actively rejected
+// by an external provider.
 func ProviderDeclined(code, message, detail string) *Error {
 	return &Error{
 		Message: message,

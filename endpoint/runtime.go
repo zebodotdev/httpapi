@@ -13,20 +13,37 @@ import (
 	responsepkg "github.com/zebodotdev/httpapi/response"
 )
 
+// HttpMethod is the HTTP method type accepted by endpoint constructors.
 type HttpMethod = Method
+
+// Handler is the application handler signature used by httpapi endpoints.
+//
+// The handler receives a parsed Req and should set exactly one response through
+// response.RenderJSON, response.RenderErr, response.RenderStream, or
+// Req.SetResponse.
 type Handler func(r *Req)
+
+// Req is the safe request type passed to endpoint handlers.
 type Req = requestpkg.Req
+
+// Res is the response type produced by endpoint handlers.
 type Res = responsepkg.Res
 
 const (
-	APIRequestsTable     = requestpkg.ReqTable
+	// APIRequestsTable is the default audit table name used by the request
+	// package.
+	APIRequestsTable = requestpkg.ReqTable
+
 	contentTypeHeaderKey = "content-type"
-	TAG                  = "[httpapi/endpoint]: "
+
+	// TAG is the log prefix used by the endpoint runtime.
+	TAG = "[httpapi/endpoint]: "
 )
 
 var logr = log.New(os.Stdout, TAG, log.Flags()|log.Llongfile)
 
-// Endpoint couples a URL endpoint to its handler function.
+// Endpoint couples route metadata, access policy, runtime behavior, and the
+// application handler for one HTTP operation.
 type Endpoint struct {
 	accepts    []ContentType
 	method     HttpMethod
@@ -40,47 +57,100 @@ type Endpoint struct {
 	priority   endpointPriorityPolicy
 	timeout    endpointTimeoutPolicy
 	authKeys   map[string]bool
-
-	/* note-to-self(yaw): this thing should be here */
-	// requiresAuth bool
 }
 
+// Handler returns the net/http handler built around the application handler.
 func (e Endpoint) Handler() http.HandlerFunc { return e.handler }
-func (e Endpoint) Method() HttpMethod        { return e.method }
-func (e Endpoint) Pattern() string           { return e.pattern }
-func (e Endpoint) Accepts() ContentType      { return primaryContentType(e.accepts) }
+
+// Method returns the normalized HTTP method accepted by the endpoint.
+func (e Endpoint) Method() HttpMethod { return e.method }
+
+// Pattern returns the endpoint path pattern before any group prefix is applied.
+func (e Endpoint) Pattern() string { return e.pattern }
+
+// Accepts returns the primary request content type accepted by the endpoint.
+func (e Endpoint) Accepts() ContentType { return primaryContentType(e.accepts) }
+
+// AcceptedContentTypes returns a copy of every request content type accepted by
+// the endpoint.
 func (e Endpoint) AcceptedContentTypes() []ContentType {
 	return cloneContentTypes(e.accepts)
 }
-func (e Endpoint) IsInternal() bool   { return e.accessPolicy().internal }
+
+// IsInternal reports whether the endpoint is callable only by service sessions.
+func (e Endpoint) IsInternal() bool { return e.accessPolicy().internal }
+
+// IsIdempotent reports whether the endpoint enforces idempotency keys and
+// replay.
 func (e Endpoint) IsIdempotent() bool { return e.idempotent }
+
+// Authorization returns the normalized authorization requirement for the
+// endpoint.
 func (e Endpoint) Authorization() AuthorizationRequirement {
 	return e.accessPolicy().auth
 }
-func (e Endpoint) RequiresAuthorization() bool { return e.Authorization().Required }
-func (e Endpoint) RouteSpec() RouteSpec        { return e.routeSpec() }
-func (e Endpoint) Priority() EndpointPriority  { return e.priorityPolicy().priority }
-func (e Endpoint) AuthKeys() map[string]bool   { return cloneEndpointAuthKeys(e.authKeys) }
 
-// EndpointGroup groups endpoints together under one path
-// prefix. All endpoints in an EndpointGroup are usually
-// concerned with one domain/service/etc.
+// RequiresAuthorization reports whether the endpoint requires any
+// authenticated session before its handler may run.
+func (e Endpoint) RequiresAuthorization() bool { return e.Authorization().Required }
+
+// RouteSpec returns provider-neutral route metadata for spec transcribers.
+func (e Endpoint) RouteSpec() RouteSpec { return e.routeSpec() }
+
+// Priority returns the normalized operational priority for the endpoint.
+func (e Endpoint) Priority() EndpointPriority { return e.priorityPolicy().priority }
+
+// AuthKeys returns a copy of endpoint authorization metadata keys.
+func (e Endpoint) AuthKeys() map[string]bool { return cloneEndpointAuthKeys(e.authKeys) }
+
+// EndpointGroup groups endpoints together under one path prefix and applies
+// shared defaults to each endpoint.
 type EndpointGroup struct {
-	PathPrefix     string
-	Endpoints      []Endpoint
-	Internal       bool
-	Auth           AuthorizationRequirement
-	Route          RouteSpec
-	Priority       EndpointPriority
-	Timeout        EndpointTimeoutSpec
+	// PathPrefix is prepended to every endpoint pattern when the group is
+	// mounted or transcribed.
+	PathPrefix string
+
+	// Endpoints is the ordered list of endpoint definitions in the group.
+	Endpoints []Endpoint
+
+	// Internal marks every endpoint in the group as service-only unless a future
+	// endpoint policy says otherwise.
+	Internal bool
+
+	// Auth is the default authorization requirement inherited by endpoints that
+	// do not declare their own requirement.
+	Auth AuthorizationRequirement
+
+	// Route is the default route metadata inherited by endpoint RouteSpec
+	// values. OperationID is intentionally not inherited because it must be
+	// unique per operation.
+	Route RouteSpec
+
+	// Priority is the default operational priority inherited by endpoints
+	// without their own priority.
+	Priority EndpointPriority
+
+	// Timeout is the default runtime timeout budget inherited field-by-field by
+	// endpoints without their own timeout values.
+	Timeout EndpointTimeoutSpec
+
+	// TimeoutHandler is the default response renderer for endpoint handler
+	// timeouts in this group.
 	TimeoutHandler EndpointTimeoutHandler
 }
 
+// Authorization returns the normalized default authorization requirement for
+// endpoints in the group.
 func (eg EndpointGroup) Authorization() AuthorizationRequirement {
 	return normalizeAuthorizationRequirement(eg.Auth)
 }
+
+// RequiresAuthorization reports whether the group default requires
+// authentication.
 func (eg EndpointGroup) RequiresAuthorization() bool { return eg.Auth.Required }
-func (eg EndpointGroup) RouteSpec() RouteSpec        { return eg.Route }
+
+// RouteSpec returns the group's default route metadata.
+func (eg EndpointGroup) RouteSpec() RouteSpec { return eg.Route }
 
 // ResolvedEndpoints returns endpoints with group-level metadata applied.
 // Transcribers and other read-only consumers should use this instead of
@@ -96,10 +166,10 @@ func (eg EndpointGroup) ResolvedEndpoints() []Endpoint {
 	return endpoints
 }
 
-// Add adds a new endpoint to the group. At the moment, it doesn't
-// ensure that duplicates are rejected. This means that if duplicate
-// endpoints are added (by path pattern), then the latest will be
-// the only effective handler.
+// Add adds a new endpoint to the group after applying group defaults.
+//
+// Add does not reject duplicate method/path pairs. If duplicates are mounted on
+// the same ServeMux, the mux's own duplicate handling determines the outcome.
 func (eg *EndpointGroup) Add(e Endpoint) {
 	eg.Endpoints = append(eg.Endpoints, eg.endpointWithGroupMetadata(e))
 }
@@ -127,10 +197,10 @@ func (eg *EndpointGroup) Mount(mux *http.ServeMux) {
 	}
 }
 
-// NewEndpoint returns a server endpoint ready to handle
-// requests in the way we approve of. That is, all in/outflows
-// are recording for auditing, latency metrics are collected,
-// etc.
+// NewEndpoint returns a basic endpoint from positional constructor arguments.
+//
+// Prefer DefineEndpoint for new code. NewEndpoint remains useful for older
+// call sites that configure metadata with EndpointOption values.
 func NewEndpoint(
 	meth HttpMethod,
 	pattern string,
@@ -144,6 +214,9 @@ func NewEndpoint(
 	}, opts...)
 }
 
+// NewIdempotentEndpoint returns an endpoint with idempotency enabled.
+//
+// Prefer DefineEndpoint with EndpointSpec.Idempotency for new code.
 func NewIdempotentEndpoint(
 	meth HttpMethod,
 	pattern string,
@@ -160,6 +233,11 @@ func NewIdempotentEndpoint(
 	}, opts...)
 }
 
+// NewIdempotentEndpointWithScopeResolver returns an idempotent endpoint whose
+// idempotency scope is computed from the request.
+//
+// Prefer DefineEndpoint with EndpointSpec.Idempotency.ScopeResolver for new
+// code.
 func NewIdempotentEndpointWithScopeResolver(
 	meth HttpMethod,
 	pattern string,
@@ -184,9 +262,9 @@ func (endpoint Endpoint) withRebuiltHandler() Endpoint {
 }
 
 func (endpoint Endpoint) httpHandler() http.HandlerFunc {
-	// close over the handler to only handle requests that have
-	// the declared http method and content-type. it appears to me that there might
-	// be a more elegant way to go about this task.
+	// Close over the endpoint metadata so the wrapper can enforce method,
+	// content type, access policy, idempotency, timeouts, and audit capture
+	// before and after application handler execution.
 	return func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
 		auditContext := r.Context()

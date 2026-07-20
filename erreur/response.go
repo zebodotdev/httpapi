@@ -2,6 +2,9 @@ package erreur
 
 import "net/http"
 
+// ResponseStatus returns the HTTP status associated with err.
+//
+// Nil errors and errors without an explicit Status map to 500.
 func ResponseStatus(err *Error) int {
 	if err == nil || err.Status == 0 {
 		return http.StatusInternalServerError
@@ -10,10 +13,13 @@ func ResponseStatus(err *Error) int {
 	return err.Status
 }
 
+// New constructs an Error without a Detail field.
 func New(status int, code, message, cause, typ, fixCode string) *Error {
 	return WithDetail(status, code, message, "", cause, typ, fixCode)
 }
 
+// WithDetail constructs an Error and populates its documentation URL through
+// the configured URL builder.
 func WithDetail(status int, code, message, detail, cause, typ, fixCode string) *Error {
 	return &Error{
 		Message: message,
@@ -27,6 +33,7 @@ func WithDetail(status int, code, message, detail, cause, typ, fixCode string) *
 	}
 }
 
+// InvalidParam returns a 400 error for invalid request parameters.
 func InvalidParam(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusBadRequest,
@@ -39,6 +46,10 @@ func InvalidParam(code, message, detail string) *Error {
 	)
 }
 
+// Unauthorized returns a legacy 401 authorization failure.
+//
+// New authn/authz code should generally prefer Unauthenticated or Forbidden so
+// the error Type distinguishes missing credentials from denied credentials.
 func Unauthorized(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusUnauthorized,
@@ -51,6 +62,7 @@ func Unauthorized(code, message, detail string) *Error {
 	)
 }
 
+// NotFound returns a 404 error for missing resources.
 func NotFound(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusNotFound,
@@ -63,6 +75,7 @@ func NotFound(code, message, detail string) *Error {
 	)
 }
 
+// Precondition returns a 400 error for unmet preconditions.
 func Precondition(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusBadRequest,
@@ -75,6 +88,7 @@ func Precondition(code, message, detail string) *Error {
 	)
 }
 
+// Conflict returns a 409 state-conflict error.
 func Conflict(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusConflict,
@@ -87,6 +101,8 @@ func Conflict(code, message, detail string) *Error {
 	)
 }
 
+// StateInvalid returns an error for a resource currently in an invalid state
+// for the attempted operation.
 func StateInvalid(status int, code, message, detail string) *Error {
 	return WithDetail(
 		status,
@@ -99,6 +115,7 @@ func StateInvalid(status int, code, message, detail string) *Error {
 	)
 }
 
+// StateConflict returns a 409 state-conflict error.
 func StateConflict(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusConflict,
@@ -111,6 +128,7 @@ func StateConflict(code, message, detail string) *Error {
 	)
 }
 
+// ServiceUnavailable returns a 503 service-unavailable error.
 func ServiceUnavailable(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusServiceUnavailable,
@@ -123,6 +141,8 @@ func ServiceUnavailable(code, message, detail string) *Error {
 	)
 }
 
+// Transient returns a 503 transient error suitable for retrying the same
+// request later.
 func Transient(code, message, detail string) *Error {
 	return WithDetail(
 		http.StatusServiceUnavailable,
@@ -135,6 +155,8 @@ func Transient(code, message, detail string) *Error {
 	)
 }
 
+// Unexpected returns the standard opaque 500 response for unclassified
+// failures.
 func Unexpected() *Error {
 	return WithDetail(
 		http.StatusInternalServerError,

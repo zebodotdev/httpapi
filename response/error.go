@@ -7,10 +7,16 @@ import (
 	e "github.com/zebodotdev/httpapi/erreur"
 )
 
+// ErrRes is the standard JSON response body for structured httpapi errors.
 type ErrRes struct {
+	// Err is the structured error returned to the client.
 	Err *e.Error `json:"error"`
 }
 
+// RenderErr sets a structured error response on the target.
+//
+// The response status is derived from the error. When the error has no URL,
+// RenderErr asks the erreur package URL builder for one.
 func RenderErr(r Target, err *e.Error) {
 	if r == nil {
 		return
@@ -41,6 +47,8 @@ func RenderErr(r Target, err *e.Error) {
 	})
 }
 
+// RenderParamErr converts an ErrInvalidParam into the standard structured
+// error response format and sets it on the target.
 func RenderParamErr(r Target, err *e.ErrInvalidParam) {
 	status := err.Status
 	if status == 0 {

@@ -15,7 +15,10 @@ const (
 	authAuditTypeEndpoint                      = authpkg.AuditTypeEndpoint
 )
 
+// AuthFailure is the audit-safe authorization failure type recorded on a Req.
 type AuthFailure = authpkg.Failure
+
+// Session is the authentication session type used by endpoint access policy.
 type Session = authpkg.Session
 
 func (e Endpoint) accessError(r *Req) *errresp.Error {

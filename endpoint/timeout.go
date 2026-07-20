@@ -11,11 +11,21 @@ import (
 // from RouteBackend.Timeout, which only describes generated gateway/backend
 // deadlines for transcribed route specs.
 type TimeoutSpec struct {
+	// ReadBody bounds how long httpapi allows for reading the inbound request
+	// body. Zero disables the read-body deadline.
 	ReadBody time.Duration
-	Handler  time.Duration
-	Write    time.Duration
+
+	// Handler bounds how long the application handler may run before its
+	// context is cancelled. Zero disables the handler deadline.
+	Handler time.Duration
+
+	// Write bounds how long httpapi allows for writing the response. Zero
+	// disables the write deadline.
+	Write time.Duration
 }
 
+// NormalizeTimeoutSpec validates endpoint runtime timeouts and returns the
+// normalized value.
 func NormalizeTimeoutSpec(spec TimeoutSpec) TimeoutSpec {
 	if spec.ReadBody < 0 {
 		panic(fmt.Sprintf(

@@ -12,27 +12,65 @@ import (
 )
 
 const (
-	DocumentSpecVersion               = "2.0"
-	DefaultDocumentTitle              = "http api"
-	DefaultDocumentDescription        = "machine-readable representation of the http api"
-	DefaultScheme                     = "https"
-	BackendExtensionName              = "x-google-backend"
-	HTTPAPIInternalExtensionName      = "x-httpapi-internal"
+	// DocumentSpecVersion is the Swagger version emitted for GCP API Gateway.
+	DocumentSpecVersion = "2.0"
+
+	// DefaultDocumentTitle is used when Transcriber.Title is empty.
+	DefaultDocumentTitle = "http api"
+
+	// DefaultDocumentDescription is used when Transcriber.Description is empty.
+	DefaultDocumentDescription = "machine-readable representation of the http api"
+
+	// DefaultScheme is the Swagger schemes value emitted by this transcriber.
+	DefaultScheme = "https"
+
+	// BackendExtensionName is the GCP API Gateway backend extension field.
+	BackendExtensionName = "x-google-backend"
+
+	// HTTPAPIInternalExtensionName records httpapi internal-only metadata on
+	// generated gateway operations.
+	HTTPAPIInternalExtensionName = "x-httpapi-internal"
+
+	// HTTPAPIAuthorizationExtensionName records httpapi endpoint authorization
+	// metadata on generated gateway operations.
 	HTTPAPIAuthorizationExtensionName = "x-httpapi-authorization"
-	HTTPAPIPriorityExtensionName      = "x-httpapi-priority"
-	PathTranslationAppend             = "APPEND_PATH_TO_ADDRESS"
-	PathTranslationConstant           = "CONSTANT_ADDRESS"
-	BackendDeadlineMax                = 600 * time.Second
-	PlaceholderResponseDescription    = "Required placeholder response."
+
+	// HTTPAPIPriorityExtensionName records endpoint priority metadata on
+	// generated gateway operations.
+	HTTPAPIPriorityExtensionName = "x-httpapi-priority"
+
+	// PathTranslationAppend is the GCP backend mode for appending the matched
+	// request path to the backend address.
+	PathTranslationAppend = "APPEND_PATH_TO_ADDRESS"
+
+	// PathTranslationConstant is the GCP backend mode for treating the backend
+	// address as the complete upstream target.
+	PathTranslationConstant = "CONSTANT_ADDRESS"
+
+	// BackendDeadlineMax is the maximum backend deadline accepted by GCP API
+	// Gateway.
+	BackendDeadlineMax = 600 * time.Second
+
+	// PlaceholderResponseDescription is used because Swagger requires at least
+	// one response entry per operation.
+	PlaceholderResponseDescription = "Required placeholder response."
 )
 
 var (
+	// ErrDocumentVersionRequired reports a document transcription request
+	// without a version.
 	ErrDocumentVersionRequired = errors.New(
 		"gcpapigateway: document version is required",
 	)
+
+	// ErrBackendAddressRequired reports an endpoint route that cannot resolve a
+	// backend address.
 	ErrBackendAddressRequired = errors.New(
 		"gcpapigateway: backend address is required",
 	)
+
+	// ErrBackendDeadlineExceeded reports a route backend timeout greater than
+	// BackendDeadlineMax.
 	ErrBackendDeadlineExceeded = errors.New(
 		"gcpapigateway: backend deadline exceeds maximum",
 	)
@@ -40,22 +78,45 @@ var (
 
 // Transcriber writes routes into a GCP API Gateway Swagger 2.0 shape.
 type Transcriber struct {
-	PathPrefix     string
-	Title          string
-	Description    string
-	Version        string
-	Host           string
+	// PathPrefix is prepended to every transcribed path.
+	PathPrefix string
+
+	// Title is the generated document title. Empty values use
+	// DefaultDocumentTitle.
+	Title string
+
+	// Description is the generated document description. Empty values use
+	// DefaultDocumentDescription.
+	Description string
+
+	// Version is the generated document version and is required for document
+	// transcription.
+	Version string
+
+	// Host is the Swagger 2.0 host value for the API Gateway document.
+	Host string
+
+	// BackendAddress is the default upstream backend address for routes that do
+	// not define RouteSpec.Backend.Address.
 	BackendAddress string
 }
 
 // Backend is the GCP API Gateway backend extension payload.
 type Backend struct {
-	Address         string   `json:"address,omitempty" yaml:"address,omitempty"`
-	PathTranslation string   `json:"path_translation,omitempty" yaml:"path_translation,omitempty"`
-	Deadline        *float64 `json:"deadline,omitempty" yaml:"deadline,omitempty"`
+	// Address is the upstream backend address for this operation.
+	Address string `json:"address,omitempty" yaml:"address,omitempty"`
+
+	// PathTranslation is the GCP API Gateway path translation mode.
+	PathTranslation string `json:"path_translation,omitempty" yaml:"path_translation,omitempty"`
+
+	// Deadline is the optional backend deadline in seconds.
+	Deadline *float64 `json:"deadline,omitempty" yaml:"deadline,omitempty"`
 }
 
 // TranscribeEndpoint emits GCP API Gateway path entries for one endpoint.
+//
+// It returns only the paths map, which is useful when composing a larger
+// document manually.
 func (t Transcriber) TranscribeEndpoint(endpoint endpointpkg.Endpoint) (spec.Paths, error) {
 	routes, err := internalroute.FromEndpoint(endpoint)
 	if err != nil {
@@ -86,7 +147,8 @@ func (t Transcriber) TranscribeGroups(groups ...endpointpkg.EndpointGroup) (spec
 	return t.transcribe(routes)
 }
 
-// TranscribeEndpointDocument emits a GCP API Gateway document for one endpoint.
+// TranscribeEndpointDocument emits a complete GCP API Gateway document for one
+// endpoint.
 func (t Transcriber) TranscribeEndpointDocument(endpoint endpointpkg.Endpoint) (spec.Document, error) {
 	routes, err := internalroute.FromEndpoint(endpoint)
 	if err != nil {

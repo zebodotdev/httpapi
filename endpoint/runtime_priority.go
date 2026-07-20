@@ -4,10 +4,19 @@ package endpoint
 type EndpointPriority = Priority
 
 const (
+	// EndpointPriorityCritical marks endpoints that are essential to core
+	// service operation or revenue-critical request paths.
 	EndpointPriorityCritical EndpointPriority = PriorityCritical
-	EndpointPriorityHigh     EndpointPriority = PriorityHigh
+
+	// EndpointPriorityHigh marks important endpoints that should be favored in
+	// operational reviews and gateway configuration.
+	EndpointPriorityHigh EndpointPriority = PriorityHigh
+
+	// EndpointPriorityStandard marks normal production endpoints.
 	EndpointPriorityStandard EndpointPriority = PriorityStandard
-	EndpointPriorityLow      EndpointPriority = PriorityLow
+
+	// EndpointPriorityLow marks endpoints that are less operationally sensitive.
+	EndpointPriorityLow EndpointPriority = PriorityLow
 )
 
 type endpointPriorityPolicy struct {
@@ -16,6 +25,9 @@ type endpointPriorityPolicy struct {
 }
 
 // WithPriority marks the endpoint with an operational priority.
+//
+// Endpoint-level priorities override any priority inherited from an
+// EndpointGroup.
 func WithPriority(priority EndpointPriority) EndpointOption {
 	priority = requiredEndpointPriority(priority)
 	return func(e *Endpoint) {
@@ -25,6 +37,7 @@ func WithPriority(priority EndpointPriority) EndpointOption {
 }
 
 // SetPriority sets the default operational priority for endpoints in the group.
+//
 // Endpoint-level priorities override the group default.
 func (eg *EndpointGroup) SetPriority(priority EndpointPriority) {
 	eg.Priority = requiredEndpointPriority(priority)

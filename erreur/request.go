@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+// InvalidRequestBody returns a 400 error for request bodies that cannot be read
+// or decoded as the expected JSON payload.
 func InvalidRequestBody() *Error {
 	code := "invalid_request_body"
 	return &Error{
@@ -20,6 +22,8 @@ func InvalidRequestBody() *Error {
 	}
 }
 
+// MethodNotAllowed returns a 405 error when a request uses a method the
+// endpoint does not accept.
 func MethodNotAllowed(allowed, got string) *Error {
 	code := "method_not_allowed"
 	allowed = strings.ToUpper(strings.TrimSpace(allowed))
@@ -40,6 +44,8 @@ func MethodNotAllowed(allowed, got string) *Error {
 	}
 }
 
+// UnsupportedContentType returns a 415 error when a request body uses an
+// unsupported content type.
 func UnsupportedContentType(got, want string) *Error {
 	code := "unsupported_content_type"
 	got = strings.TrimSpace(got)
@@ -60,6 +66,8 @@ func UnsupportedContentType(got, want string) *Error {
 	}
 }
 
+// RequestTimeout returns a timeout error for endpoint handlers that exceed
+// their configured runtime budget.
 func RequestTimeout() *Error {
 	code := "request_timeout"
 	return &Error{

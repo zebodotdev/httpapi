@@ -7,6 +7,8 @@ const (
 	defaultServiceAuthorizationScheme = authpkg.DefaultServiceAuthorizationScheme
 )
 
+// AuthorizationSchemes configures how request parsing interprets Authorization
+// header scheme prefixes.
 type AuthorizationSchemes = authpkg.AuthorizationSchemes
 
 // ConfigureAuthorizationSchemes sets the Authorization header schemes used by
@@ -19,6 +21,8 @@ func currentAuthorizationSchemes() AuthorizationSchemes {
 	return authpkg.CurrentAuthorizationSchemes()
 }
 
+// CurrentAuthorizationSchemes returns a copy of the globally configured
+// Authorization header schemes.
 func CurrentAuthorizationSchemes() AuthorizationSchemes {
 	return currentAuthorizationSchemes()
 }
@@ -27,6 +31,8 @@ func normalizeAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSc
 	return authpkg.NormalizeAuthorizationSchemes(schemes)
 }
 
+// NormalizeAuthorizationSchemes trims configured schemes, applies defaults, and
+// removes duplicate aliases.
 func NormalizeAuthorizationSchemes(schemes AuthorizationSchemes) AuthorizationSchemes {
 	return normalizeAuthorizationSchemes(schemes)
 }

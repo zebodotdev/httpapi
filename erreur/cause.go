@@ -34,6 +34,8 @@ const (
 	// permissions don't include the attempted action.
 	CauseAuthzFailed = "authorization_failed"
 
+	// CauseNotFound indicates the requested resource does not exist or is not
+	// visible to the caller.
 	CauseNotFound = "resource_not_found"
 
 	// CauseInvalidBody indicates the request body could not be read
@@ -56,10 +58,16 @@ const (
 	// size limit accepted by the API or endpoint.
 	CausePayloadTooLarge = "payload_too_large"
 
+	// CausePreconditionUnmet indicates the caller must satisfy a prerequisite
+	// before the operation can run.
 	CausePreconditionUnmet = "precondition_unmet"
 
+	// CauseStateConflict indicates the resource changed or is already in a
+	// conflicting state.
 	CauseStateConflict = "resource_state_conflict"
 
+	// CauseStateInvalid indicates the resource's current state cannot support
+	// the attempted operation.
 	CauseStateInvalid = "resource_state_invalid"
 
 	// CauseIdempotencyConflict indicates an idempotency key was
@@ -82,12 +90,16 @@ const (
 	// limit was exceeded.
 	CauseLimitExceeded = "limit_exceeded"
 
+	// CauseServiceUnavailable indicates the service is temporarily unable to
+	// process the request.
 	CauseServiceUnavailable = "service_unavailable"
 
 	// CauseDependencyUnavailable indicates an internal dependency is
 	// temporarily unavailable.
 	CauseDependencyUnavailable = "dependency_unavailable"
 
+	// CauseDependencyFailed indicates an internal dependency returned a terminal
+	// or unexpected failure.
 	CauseDependencyFailed = "dependency_failed"
 
 	// CauseProviderUnavailable indicates an external provider or

@@ -41,42 +41,87 @@ const (
 	corsMethodsHeaderKey = "access-control-allow-methods"
 	corsHeadersHeaderKey = "access-control-allow-headers"
 
-	ReqTable    = "api_requests"
+	// ReqTable is the default request audit table name used by services that
+	// persist httpapi request audits.
+	ReqTable = "api_requests"
+
+	// ReqPartKeyK is the request audit partition-key attribute name.
 	ReqPartKeyK = "application_id"
+
+	// ReqSortKeyK is the request audit sort-key attribute name.
 	ReqSortKeyK = "id"
-	IdType      = "req"
+
+	// IdType is the request ID prefix used by NewID.
+	IdType = "req"
 )
 
+// UnauthorizedAppID is the placeholder application id assigned before request
+// authentication succeeds.
 const UnauthorizedAppID = unAuthzReqAppID
 
 var logr = log.New(os.Stdout, "[httpapi/request]: ", log.Flags()|log.Llongfile)
 
 type jsonb map[string]string
 
-// Req is the parameter we should pass to all endpoint
-// handlers. the interior `Req` will contain all they need
-// to successfully respond, then they'll write their response
-// to the interior `Res` field.
+// Req is the parsed request object passed to endpoint handlers.
+//
+// Req deliberately represents a safe parse of the incoming HTTP request. It
+// does not know which endpoint will handle it or what that endpoint requires;
+// endpoint authorization, internal-only policy, idempotency, priority, and
+// timeout expectations live on endpoint.Endpoint and endpoint.EndpointSpec.
 type Req struct {
-	AppID                string        `json:"application_id"`
-	SessID               string        `json:"session_id,omitempty"`
-	IdemKey              string        `json:"idempotency_key,omitzero"`
-	RecdAt               time.Time     `json:"received_at"`
-	Req                  *http.Request `json:"request,omitempty"`
-	Body                 []byte        `json:"body"`
-	Res                  *response.Res `json:"response,omitempty"`
-	Err                  *e.Error      `json:"error,omitempty"`
-	Dur                  time.Duration `json:"duration,omitzero"`
-	ID                   string        `json:"id"`
-	Sess                 *Session      `json:"session"`
-	AuthFailure          *AuthFailure  `json:"auth_failure,omitempty"`
-	AuthorizationFailure *AuthFailure  `json:"authorization_failure,omitempty"`
+	// AppID is the authenticated application id, or UnauthorizedAppID before a
+	// session has been attached.
+	AppID string `json:"application_id"`
+
+	// SessID is the authenticated session id.
+	SessID string `json:"session_id,omitempty"`
+
+	// IdemKey is the idempotency key used by idempotent endpoints. It is
+	// redacted during audit serialization.
+	IdemKey string `json:"idempotency_key,omitzero"`
+
+	// RecdAt is when httpapi received and began parsing the request.
+	RecdAt time.Time `json:"received_at"`
+
+	// Req is the original Go HTTP request with its body restored for downstream
+	// consumers after httpapi has buffered it.
+	Req *http.Request `json:"request,omitempty"`
+
+	// Body is the buffered request body.
+	Body []byte `json:"body"`
+
+	// Res is the response selected by the endpoint handler or runtime.
+	Res *response.Res `json:"response,omitempty"`
+
+	// Err is an optional structured error attached by callers for audit output.
+	Err *e.Error `json:"error,omitempty"`
+
+	// Dur is the completed request duration.
+	Dur time.Duration `json:"duration,omitzero"`
+
+	// ID is the httpapi request identifier.
+	ID string `json:"id"`
+
+	// Sess is the authenticated session attached by middleware, context, or the
+	// configured Authenticator.
+	Sess *Session `json:"session"`
+
+	// AuthFailure records credential parsing or authentication failure details
+	// for audit output.
+	AuthFailure *AuthFailure `json:"auth_failure,omitempty"`
+
+	// AuthorizationFailure records endpoint access-policy failure details for
+	// audit output.
+	AuthorizationFailure *AuthFailure `json:"authorization_failure,omitempty"`
 }
 
+// Res is the response type produced by request handlers.
 type Res = response.Res
 
 func (r *Req) partKey() string { return r.AppID }
 
+// SetResponse stores the response that should be written for the request.
 func (r *Req) SetResponse(res *response.Res) {
 	if r == nil {
 		return
@@ -84,6 +129,7 @@ func (r *Req) SetResponse(res *response.Res) {
 	r.Res = res
 }
 
+// Response returns the response currently attached to the request.
 func (r *Req) Response() *response.Res {
 	if r == nil {
 		return nil
@@ -91,6 +137,10 @@ func (r *Req) Response() *response.Res {
 	return r.Res
 }
 
+// MarshalJSON serializes Req into a redacted audit-safe JSON shape.
+//
+// Sensitive headers, request bodies, response bodies, authorization material,
+// and idempotency keys are redacted or summarized before serialization.
 func (r Req) MarshalJSON() ([]byte, error) {
 	safeReq, safeh, reqURL := r.auditRequest()
 	bdy := auditBody(r.Body)
@@ -133,6 +183,8 @@ func (r Req) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// Context returns the underlying request context or context.Background when the
+// Req is nil or not backed by an http.Request.
 func (r *Req) Context() context.Context {
 	if r == nil || r.Req == nil {
 		return context.Background()
@@ -141,26 +193,59 @@ func (r *Req) Context() context.Context {
 	return r.Req.Context()
 }
 
+// RequestAudit is the redacted HTTP request shape embedded in Req audit JSON.
 type RequestAudit struct {
-	Method        string      `json:"method,omitempty"`
-	URL           string      `json:"url,omitempty"`
-	Path          string      `json:"path,omitempty"`
-	RequestURI    string      `json:"request_uri,omitempty"`
-	Host          string      `json:"host,omitempty"`
-	RemoteAddr    string      `json:"remote_addr,omitempty"`
-	UserAgent     string      `json:"user_agent,omitempty"`
-	Referer       string      `json:"referer,omitempty"`
-	Header        http.Header `json:"header,omitempty"`
-	QueryRedacted bool        `json:"query_redacted,omitempty"`
+	// Method is the inbound HTTP method.
+	Method string `json:"method,omitempty"`
+
+	// URL is the request URL with query string and fragment removed.
+	URL string `json:"url,omitempty"`
+
+	// Path is the request URL path.
+	Path string `json:"path,omitempty"`
+
+	// RequestURI is the escaped path without query parameters.
+	RequestURI string `json:"request_uri,omitempty"`
+
+	// Host is the inbound Host value.
+	Host string `json:"host,omitempty"`
+
+	// RemoteAddr is the remote address observed by the Go HTTP server.
+	RemoteAddr string `json:"remote_addr,omitempty"`
+
+	// UserAgent is the inbound User-Agent value.
+	UserAgent string `json:"user_agent,omitempty"`
+
+	// Referer is the redacted Referer URL.
+	Referer string `json:"referer,omitempty"`
+
+	// Header contains a small allowlist of safe headers plus redacted sensitive
+	// headers.
+	Header http.Header `json:"header,omitempty"`
+
+	// QueryRedacted reports whether query parameters were present and removed.
+	QueryRedacted bool `json:"query_redacted,omitempty"`
 }
 
+// ResponseAudit is the redacted HTTP response shape embedded in Req audit JSON.
 type ResponseAudit struct {
-	ContentType string      `json:"content_type,omitempty"`
-	Status      int         `json:"status,omitempty"`
-	SentAt      time.Time   `json:"sent_at,omitzero"`
-	Header      http.Header `json:"header,omitempty"`
-	BodyPresent bool        `json:"body_present,omitempty"`
-	Streamed    bool        `json:"streamed,omitempty"`
+	// ContentType is the response media type.
+	ContentType string `json:"content_type,omitempty"`
+
+	// Status is the HTTP response status code.
+	Status int `json:"status,omitempty"`
+
+	// SentAt is when the response object was created.
+	SentAt time.Time `json:"sent_at,omitzero"`
+
+	// Header contains response headers safe for audit output.
+	Header http.Header `json:"header,omitempty"`
+
+	// BodyPresent records whether a non-empty body or body reader was attached.
+	BodyPresent bool `json:"body_present,omitempty"`
+
+	// Streamed records whether the response body was streamed.
+	Streamed bool `json:"streamed,omitempty"`
 }
 
 func (r Req) auditRequest() (*RequestAudit, http.Header, string) {
@@ -313,10 +398,22 @@ func auditRequestURI(req *http.Request) string {
 	return req.URL.EscapedPath()
 }
 
-func (r *Req) Origin() string      { return r.Req.Header.Get("origin") }
-func (r *Req) Path() string        { return r.Req.URL.Path }
-func (r *Req) URL() string         { return r.Req.URL.String() }
+// Origin returns the request Origin header.
+func (r *Req) Origin() string { return r.Req.Header.Get("origin") }
+
+// Path returns the parsed URL path.
+func (r *Req) Path() string { return r.Req.URL.Path }
+
+// URL returns the full request URL string.
+func (r *Req) URL() string { return r.Req.URL.String() }
+
+// ContentType returns the request Content-Type header.
 func (r *Req) ContentType() string { return r.Req.Header.Get("content-type") }
+
+// Authorization returns the credential-bearing Authorization value.
+//
+// X-Forwarded-Authorization is preferred when present so a trusted proxy can
+// forward credentials while using Authorization for its own hop.
 func (r *Req) Authorization() string {
 	auth := strings.TrimSpace(r.Req.Header.Get(fwdAuthHeaderKey))
 	if auth == "" {
@@ -324,6 +421,13 @@ func (r *Req) Authorization() string {
 	}
 	return auth
 }
+
+// DownstreamAuthorization returns the Authorization value that should be sent
+// to a downstream service.
+//
+// Service sessions may carry a bearer token representing the delegated subject;
+// in that case this method converts the session token back into the configured
+// bearer scheme. Regular requests return their original Authorization value.
 func (r *Req) DownstreamAuthorization() string {
 	if r == nil {
 		return ""
@@ -339,11 +443,25 @@ func (r *Req) DownstreamAuthorization() string {
 
 	return r.Authorization()
 }
-func (r *Req) RemoteAddr() string  { return r.Req.RemoteAddr }
-func (r *Req) Method() string      { return r.Req.Method }
-func (r *Req) Referer() string     { return r.Req.Referer() }
+
+// RemoteAddr returns the remote network address observed by the Go HTTP
+// server.
+func (r *Req) RemoteAddr() string { return r.Req.RemoteAddr }
+
+// Method returns the inbound HTTP method.
+func (r *Req) Method() string { return r.Req.Method }
+
+// Referer returns the request Referer header.
+func (r *Req) Referer() string { return r.Req.Referer() }
+
+// RequestBody returns the buffered request body bytes.
 func (r *Req) RequestBody() []byte { return r.Body }
-func (r *Req) Errored() bool       { return r.Err != nil }
+
+// Errored reports whether a structured error has been attached to the request.
+func (r *Req) Errored() bool { return r.Err != nil }
+
+// Duration returns the elapsed milliseconds between request receipt and
+// response creation. It returns nil until a response exists.
 func (r *Req) Duration() *int64 {
 	if r.Res == nil {
 		return nil
@@ -352,6 +470,9 @@ func (r *Req) Duration() *int64 {
 	diff := r.Res.SentAt.UnixMilli() - r.RecdAt.UnixMilli()
 	return &diff
 }
+
+// UserAgent returns the request User-Agent, defaulting to unknown_user_agent
+// when the header is empty.
 func (r *Req) UserAgent() string {
 	ua := strings.TrimSpace(r.Req.UserAgent())
 	if ua == "" {
@@ -361,6 +482,8 @@ func (r *Req) UserAgent() string {
 	return ua
 }
 
+// ResponseHeaders returns response headers as a JSON-friendly map. Multiple
+// header values are joined with |.
 func (r *Req) ResponseHeaders() *jsonb {
 	if r.Res == nil {
 		return nil
@@ -376,6 +499,9 @@ func (r *Req) ResponseHeaders() *jsonb {
 	return &combined
 }
 
+// ResponseBody returns the encoded non-streaming response body.
+//
+// Streaming responses cannot be buffered and return an error.
 func (r *Req) ResponseBody() ([]byte, error) {
 	if r.Res.BodyReader != nil {
 		return nil, fmt.Errorf("httpapi: streamed response body cannot be buffered")
@@ -394,6 +520,8 @@ func (r *Req) ResponseBody() ([]byte, error) {
 	return body, nil
 }
 
+// ResponseContentType returns the response content type or nil when no response
+// has been attached.
 func (r *Req) ResponseContentType() *string {
 	if r.Res == nil {
 		return nil
@@ -402,6 +530,8 @@ func (r *Req) ResponseContentType() *string {
 	return &r.Res.ContentType
 }
 
+// ResponseStatus returns the response status code or nil when no response has
+// been attached.
 func (r *Req) ResponseStatus() *int {
 	if r.Res == nil {
 		return nil
@@ -410,6 +540,8 @@ func (r *Req) ResponseStatus() *int {
 	return &r.Res.Status
 }
 
+// Headers returns all request headers as a JSON-friendly map. Multiple header
+// values are joined with " | ".
 func (r *Req) Headers() jsonb {
 	combined := make(jsonb)
 	for k, v := range r.Req.Header {
@@ -430,10 +562,17 @@ func genReqID() string {
 	return fmt.Sprintf("req_%d", time.Now().UnixNano())
 }
 
+// NewID returns a new request identifier.
 func NewID() string {
 	return genReqID()
 }
 
+// NewReq parses an http.Request into an httpapi Req.
+//
+// NewReq buffers and restores the request body, assigns a request id, attaches
+// any pre-authenticated context session, and attempts authentication when the
+// Authorization scheme matches the configured bearer or service schemes. It
+// returns nil when the request body cannot be read.
 func NewReq(req *http.Request) *Req {
 	if req.Body == nil {
 		req.Body = http.NoBody

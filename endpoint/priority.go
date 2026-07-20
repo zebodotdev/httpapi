@@ -9,12 +9,23 @@ import (
 type Priority string
 
 const (
+	// PriorityCritical marks endpoints that are essential to core service
+	// operation or revenue-critical request paths.
 	PriorityCritical Priority = "critical"
-	PriorityHigh     Priority = "high"
+
+	// PriorityHigh marks important endpoints that should be favored in
+	// operational reviews and gateway configuration.
+	PriorityHigh Priority = "high"
+
+	// PriorityStandard marks normal production endpoints.
 	PriorityStandard Priority = "standard"
-	PriorityLow      Priority = "low"
+
+	// PriorityLow marks endpoints that are less operationally sensitive.
+	PriorityLow Priority = "low"
 )
 
+// RequiredPriority returns a normalized priority and panics when priority is
+// empty.
 func RequiredPriority(priority Priority) Priority {
 	priority = NormalizePriority(priority)
 	if priority == "" {
@@ -24,6 +35,10 @@ func RequiredPriority(priority Priority) Priority {
 	return priority
 }
 
+// NormalizePriority trims and canonicalizes an endpoint priority.
+//
+// Unknown non-empty priorities panic so endpoint definitions fail at startup
+// instead of producing ambiguous generated specs.
 func NormalizePriority(priority Priority) Priority {
 	switch strings.TrimSpace(strings.ToLower(string(priority))) {
 	case "":

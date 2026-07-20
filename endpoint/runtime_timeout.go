@@ -34,6 +34,9 @@ type endpointTimeoutPolicy struct {
 type endpointDeadlineSetter func(*http.ResponseController, time.Time) error
 
 // WithTimeoutSpec applies runtime timeout budgets to an endpoint.
+//
+// It replaces all timeout fields on the endpoint. Use EndpointGroup defaults
+// when you want unset endpoint fields to inherit group-level values.
 func WithTimeoutSpec(spec EndpointTimeoutSpec) EndpointOption {
 	spec = normalizeEndpointTimeoutSpec(spec)
 	return func(e *Endpoint) {
@@ -45,6 +48,9 @@ func WithTimeoutSpec(spec EndpointTimeoutSpec) EndpointOption {
 }
 
 // WithTimeoutHandler sets the endpoint-specific timeout response handler.
+//
+// If the handler does not set a response, httpapi falls back to
+// DefaultEndpointTimeoutHandler.
 func WithTimeoutHandler(handler EndpointTimeoutHandler) EndpointOption {
 	return func(e *Endpoint) {
 		e.timeout.handler = handler
@@ -53,8 +59,9 @@ func WithTimeoutHandler(handler EndpointTimeoutHandler) EndpointOption {
 }
 
 // ConfigureTimeoutSpec sets default runtime timeout budgets for endpoints in
-// the group. Endpoint-level timeout fields override group defaults field by
-// field.
+// the group.
+//
+// Endpoint-level timeout fields override group defaults field by field.
 func (eg *EndpointGroup) ConfigureTimeoutSpec(spec EndpointTimeoutSpec) {
 	eg.Timeout = normalizeEndpointTimeoutSpec(spec)
 	for i := range eg.Endpoints {
@@ -64,7 +71,9 @@ func (eg *EndpointGroup) ConfigureTimeoutSpec(spec EndpointTimeoutSpec) {
 }
 
 // ConfigureTimeoutHandler sets the default timeout response handler for
-// endpoints in the group. Endpoint-level timeout handlers override it.
+// endpoints in the group.
+//
+// Endpoint-level timeout handlers override the group handler.
 func (eg *EndpointGroup) ConfigureTimeoutHandler(handler EndpointTimeoutHandler) {
 	eg.TimeoutHandler = handler
 	for i := range eg.Endpoints {
@@ -73,10 +82,12 @@ func (eg *EndpointGroup) ConfigureTimeoutHandler(handler EndpointTimeoutHandler)
 	}
 }
 
+// TimeoutSpec returns the group's normalized default runtime timeout budgets.
 func (eg EndpointGroup) TimeoutSpec() EndpointTimeoutSpec {
 	return normalizeEndpointTimeoutSpec(eg.Timeout)
 }
 
+// TimeoutSpec returns the endpoint's normalized runtime timeout budgets.
 func (e Endpoint) TimeoutSpec() EndpointTimeoutSpec {
 	return e.timeoutSpec()
 }

@@ -12,30 +12,54 @@ import (
 )
 
 const (
-	SessionAuthModeBearer  = authpkg.SessionModeBearer
+	// SessionAuthModeBearer is the request-facing alias for bearer sessions.
+	SessionAuthModeBearer = authpkg.SessionModeBearer
+
+	// SessionAuthModeService is the request-facing alias for service sessions.
 	SessionAuthModeService = authpkg.SessionModeService
 )
 
 var (
-	ErrNoKeyToken                 = authpkg.ErrNoKeyToken
+	// ErrNoKeyToken reports that a recognized Authorization scheme did not
+	// contain usable credential material.
+	ErrNoKeyToken = authpkg.ErrNoKeyToken
+
+	// ErrAuthenticatorNotConfigured reports that request authentication was
+	// attempted before a concrete Authenticator was installed.
 	ErrAuthenticatorNotConfigured = authpkg.ErrAuthenticatorNotConfigured
-	ErrAuthzFailed                = authpkg.ErrAuthzFailed
+
+	// ErrAuthzFailed reports that credentials were parsed but could not produce
+	// an authorized session.
+	ErrAuthzFailed = authpkg.ErrAuthzFailed
 )
 
 type sessionContextKey struct{}
 
+// App identifies the application a session belongs to.
 type App = authpkg.App
+
+// Session is the authenticated request session attached to a Req.
 type Session = authpkg.Session
+
+// AuthenticationRequest describes the credential envelope parsed from the
+// inbound HTTP request and passed to the configured Authenticator.
 type AuthenticationRequest = authpkg.AuthenticationRequest
 
 // Authenticator turns a supported Authorization header into a Session.
+//
+// Implementations own provider-specific credential verification. httpapi only
+// parses the request envelope, calls the authenticator, and attaches the
+// returned session.
 type Authenticator interface {
+	// Authenticate verifies the parsed authentication request and returns a
+	// usable session.
 	Authenticate(context.Context, *Req, AuthenticationRequest) (*Session, error)
 }
 
 // AuthenticatorFunc adapts a function to Authenticator.
 type AuthenticatorFunc func(context.Context, *Req, AuthenticationRequest) (*Session, error)
 
+// Authenticate calls f(ctx, req, auth).
 func (f AuthenticatorFunc) Authenticate(
 	ctx context.Context,
 	req *Req,
@@ -46,6 +70,7 @@ func (f AuthenticatorFunc) Authenticate(
 
 type noAuthenticator struct{}
 
+// Authenticate fails because no concrete authenticator is configured.
 func (noAuthenticator) Authenticate(
 	context.Context,
 	*Req,
@@ -62,7 +87,9 @@ var authenticatorState = struct {
 }
 
 // ConfigureAuthenticator installs the package-level authenticator.
-// It returns a restore function for tests and short-lived overrides.
+//
+// It returns a restore function for tests and short-lived overrides. Passing nil
+// restores the fail-closed authenticator.
 func ConfigureAuthenticator(auth Authenticator) func() {
 	if auth == nil {
 		auth = noAuthenticator{}
@@ -97,7 +124,8 @@ func ContextWithSession(ctx context.Context, session *Session) context.Context {
 	return context.WithValue(ctx, sessionContextKey{}, session)
 }
 
-// SessionFromContext returns a session previously installed by ContextWithSession.
+// SessionFromContext returns a session previously installed by
+// ContextWithSession.
 func SessionFromContext(ctx context.Context) *Session {
 	session, _ := ctx.Value(sessionContextKey{}).(*Session)
 	return session
@@ -117,9 +145,16 @@ func ContextWithAuthenticatedApp(ctx context.Context, appID string) context.Cont
 	})
 }
 
+// Authenticated reports whether a non-nil request has an authorized session.
 func (r *Req) Authenticated() bool { return r != nil && r.Sess.Authorized() }
-func (r *Req) Authorized() bool    { return r.Authenticated() }
 
+// Authorized reports whether the request session is usable for general
+// authenticated work. Endpoint-specific access rules are applied separately by
+// endpoint.Endpoint.
+func (r *Req) Authorized() bool { return r.Authenticated() }
+
+// AttachSession attaches an authenticated session to the request and updates
+// the request's session and application identifiers.
 func (r *Req) AttachSession(sess *Session) {
 	if r == nil || sess == nil {
 		return

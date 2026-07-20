@@ -2,6 +2,8 @@ package erreur
 
 import "net/http"
 
+// ConfigurationMissing returns a 400 error for missing account, application, or
+// service configuration required by the operation.
 func ConfigurationMissing(code, message, detail string) *Error {
 	return &Error{
 		Message: message,
@@ -15,6 +17,8 @@ func ConfigurationMissing(code, message, detail string) *Error {
 	}
 }
 
+// CapabilityUnsupported returns a 403 error when the requested capability is
+// not enabled or not supported for the caller's account or application.
 func CapabilityUnsupported(code, message, detail string) *Error {
 	return &Error{
 		Message: message,

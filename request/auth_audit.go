@@ -14,10 +14,19 @@ const (
 	authAuditTypeEndpoint  = authpkg.AuditTypeEndpoint
 )
 
+// ErrUnsupportedAuthorizationScheme reports that an Authorization header used a
+// scheme httpapi is not configured to accept.
 var ErrUnsupportedAuthorizationScheme = authpkg.ErrUnsupportedAuthorizationScheme
 
+// AuthAudit is the authentication and authorization view embedded in request
+// audit output.
 type AuthAudit = authpkg.Audit
+
+// AuthFailure is an audit-safe description of authentication or authorization
+// failure.
 type AuthFailure = authpkg.Failure
+
+// SessionAudit is the redacted representation of a Session used in audits.
 type SessionAudit = authpkg.SessionAudit
 
 func (r *Req) recordAuthFailure(authType string, err error) {

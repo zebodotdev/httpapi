@@ -1,7 +1,11 @@
-// Package erreur is defines the structure of
-// error response body.
+// Package erreur defines structured error response bodies and constructors.
 package erreur
 
+// Error is the structured error object returned by httpapi response helpers.
+//
+// Code is the most specific machine-readable identifier. Type, Cause, and
+// FixCode group related errors so clients can choose display, retry, and
+// remediation behavior without string-matching every Code.
 type Error struct {
 	// Message is a concise, human-readable description
 	// of the error.  This provides a quick summary of

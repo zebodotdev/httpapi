@@ -11,28 +11,58 @@ import (
 )
 
 const (
-	DocumentSpecVersion               = "3.1.1"
-	DefaultDocumentTitle              = "http api"
-	DefaultDocumentDescription        = "machine-readable representation of the http api"
-	PlaceholderResponseDescription    = "Required placeholder response."
+	// DocumentSpecVersion is the OpenAPI version emitted by this transcriber.
+	DocumentSpecVersion = "3.1.1"
+
+	// DefaultDocumentTitle is used when Transcriber.Title is empty.
+	DefaultDocumentTitle = "http api"
+
+	// DefaultDocumentDescription is used when Transcriber.Description is empty.
+	DefaultDocumentDescription = "machine-readable representation of the http api"
+
+	// PlaceholderResponseDescription is used because OpenAPI requires at least
+	// one response entry per operation.
+	PlaceholderResponseDescription = "Required placeholder response."
+
+	// HTTPAPIAuthorizationExtensionName records httpapi endpoint authorization
+	// metadata on generated public operations.
 	HTTPAPIAuthorizationExtensionName = "x-httpapi-authorization"
-	HTTPAPIPriorityExtensionName      = "x-httpapi-priority"
+
+	// HTTPAPIPriorityExtensionName records endpoint priority metadata on
+	// generated public operations.
+	HTTPAPIPriorityExtensionName = "x-httpapi-priority"
 )
 
+// ErrDocumentVersionRequired reports a document transcription request without a
+// version.
 var ErrDocumentVersionRequired = errors.New(
 	"openapi31: document version is required",
 )
 
 // Transcriber writes routes into a public OpenAPI 3.1 shape.
 type Transcriber struct {
-	PathPrefix  string
-	Title       string
+	// PathPrefix is prepended to every transcribed path.
+	PathPrefix string
+
+	// Title is the generated document title. Empty values use
+	// DefaultDocumentTitle.
+	Title string
+
+	// Description is the generated document description. Empty values use
+	// DefaultDocumentDescription.
 	Description string
-	Version     string
-	ServerURL   string
+
+	// Version is the generated document version and is required for document
+	// transcription.
+	Version string
+
+	// ServerURL is the optional OpenAPI 3 server URL.
+	ServerURL string
 }
 
 // TranscribeEndpoint emits public OpenAPI path entries for one endpoint.
+//
+// Internal endpoints are omitted from public OpenAPI output.
 func (t Transcriber) TranscribeEndpoint(endpoint endpointpkg.Endpoint) (spec.Paths, error) {
 	routes, err := internalroute.FromEndpoint(endpoint)
 	if err != nil {
@@ -43,6 +73,8 @@ func (t Transcriber) TranscribeEndpoint(endpoint endpointpkg.Endpoint) (spec.Pat
 }
 
 // TranscribeGroup emits public OpenAPI path entries for one endpoint group.
+//
+// Internal endpoints are omitted from public OpenAPI output.
 func (t Transcriber) TranscribeGroup(group endpointpkg.EndpointGroup) (spec.Paths, error) {
 	routes, err := internalroute.FromGroup(group)
 	if err != nil {
@@ -54,6 +86,8 @@ func (t Transcriber) TranscribeGroup(group endpointpkg.EndpointGroup) (spec.Path
 
 // TranscribeGroups emits public OpenAPI path entries for several endpoint
 // groups.
+//
+// Internal endpoints are omitted from public OpenAPI output.
 func (t Transcriber) TranscribeGroups(groups ...endpointpkg.EndpointGroup) (spec.Paths, error) {
 	routes, err := internalroute.FromGroups(groups...)
 	if err != nil {
@@ -63,7 +97,8 @@ func (t Transcriber) TranscribeGroups(groups ...endpointpkg.EndpointGroup) (spec
 	return t.transcribe(routes)
 }
 
-// TranscribeEndpointDocument emits a public OpenAPI 3.1 document for one endpoint.
+// TranscribeEndpointDocument emits a public OpenAPI 3.1 document for one
+// endpoint.
 func (t Transcriber) TranscribeEndpointDocument(endpoint endpointpkg.Endpoint) (spec.Document, error) {
 	routes, err := internalroute.FromEndpoint(endpoint)
 	if err != nil {

@@ -1,6 +1,8 @@
 package erreur
 
 const (
+	// TypeBadRequest indicates the request is invalid for a general reason that
+	// is not covered by a more specific type.
 	TypeBadRequest = "bad_request"
 
 	// TypeAuthentication indicates the request did not provide
@@ -12,8 +14,11 @@ const (
 	// but not permitted to perform the attempted operation.
 	TypeAuthorization = "authorization_error"
 
+	// TypeAuthzFailed preserves the legacy authorization-failed type used by
+	// earlier Commerce API responses.
 	TypeAuthzFailed = "authorization_failed"
 
+	// TypeNotFound indicates the target resource could not be found.
 	TypeNotFound = "not_found"
 
 	// TypeInvalidParam indicates the request failed due to invalid
@@ -60,10 +65,16 @@ const (
 	// resource before deciding whether another request is necessary.
 	TypeStateConflict = "state_conflict"
 
+	// TypeStateInvalid indicates the resource state cannot support the attempted
+	// operation.
 	TypeStateInvalid = "state_invalid"
 
+	// TypeDependencyFailed indicates an internal dependency failed in a way the
+	// caller cannot directly fix.
 	TypeDependencyFailed = "dependency_failed"
 
+	// TypeServiceUnavailable indicates the service is temporarily unable to
+	// process the request.
 	TypeServiceUnavailable = "service_unavailable"
 
 	// TypeUnknown indicates an unexpected failure that doesn't fit

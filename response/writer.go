@@ -26,16 +26,27 @@ var logr = log.New(os.Stdout, "[httpapi/response]: ", log.Flags()|log.Llongfile)
 
 // WriteOptions controls how a Res is written to the HTTP connection.
 type WriteOptions struct {
-	RequestID    string
-	Duration     time.Duration
+	// RequestID is written as x-request-id.
+	RequestID string
+
+	// Duration is written as x-request-timing.
+	Duration time.Duration
+
+	// WriteTimeout bounds the response write. Zero disables the write deadline.
 	WriteTimeout time.Duration
 }
 
 // WriteResult describes the completed response write.
 type WriteResult struct {
-	Status       int
+	// Status is the response status code written to the client.
+	Status int
+
+	// BytesWritten is the number of bytes written or, for some writers, the
+	// encoded body length when the writer reports zero bytes.
 	BytesWritten int
-	Streamed     bool
+
+	// Streamed reports whether the response was copied from BodyReader.
+	Streamed bool
 }
 
 // WriteResponse writes a response using httpapi's standard headers, CORS
@@ -62,6 +73,9 @@ func WriteResponse(
 }
 
 // EncodeResponseBody encodes a non-streaming response body.
+//
+// JSON responses are encoded with encoding/json. TextHTML and TextPlain
+// responses use the string body directly when possible.
 func EncodeResponseBody(res *Res) ([]byte, error) {
 	if res == nil {
 		return nil, fmt.Errorf("httpapi: response is required")
@@ -84,6 +98,9 @@ func EncodeResponseBody(res *Res) ([]byte, error) {
 }
 
 // WriteResponseBody writes a pre-encoded non-streaming response body.
+//
+// It applies standard headers, optional write deadlines, and returns the write
+// result for audit and logging.
 func WriteResponseBody(
 	w http.ResponseWriter,
 	res *Res,
@@ -108,6 +125,8 @@ func WriteResponseBody(
 }
 
 // WriteResponseStream writes a streaming response body.
+//
+// If BodyReader implements io.Closer, it is closed after streaming completes.
 func WriteResponseStream(
 	w http.ResponseWriter,
 	res *Res,

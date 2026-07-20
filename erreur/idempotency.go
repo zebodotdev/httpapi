@@ -2,6 +2,8 @@ package erreur
 
 import "net/http"
 
+// IdempotencyKeyGenerationFailed returns a transient idempotency error for
+// services that could not generate a fallback key.
 func IdempotencyKeyGenerationFailed() *Error {
 	code := "idempotency_key_generation_failed"
 	return &Error{
@@ -16,6 +18,8 @@ func IdempotencyKeyGenerationFailed() *Error {
 	}
 }
 
+// IdempotencyInProgress returns an error for a key currently reserved by an
+// incomplete operation.
 func IdempotencyInProgress() *Error {
 	code := "idempotency_key_in_progress"
 	return &Error{
@@ -30,6 +34,8 @@ func IdempotencyInProgress() *Error {
 	}
 }
 
+// IdempotencyConflict returns an error for an idempotency key reused with a
+// different operation fingerprint.
 func IdempotencyConflict() *Error {
 	code := "idempotency_key_conflict"
 	return &Error{
@@ -44,6 +50,8 @@ func IdempotencyConflict() *Error {
 	}
 }
 
+// IdempotencyStorageUnavailable returns an error for idempotent endpoints whose
+// backing store is temporarily unavailable or not configured.
 func IdempotencyStorageUnavailable() *Error {
 	code := "idempotency_storage_unavailable"
 	return &Error{

@@ -7,35 +7,60 @@ import (
 	"strings"
 )
 
+// ErrInvalidExtensionName reports an OpenAPI extension name that does not begin
+// with x-.
 var ErrInvalidExtensionName = errors.New(
 	"openapi/spec: extension name must begin with x-",
 )
 
+// ErrDuplicateExtensionName reports two extensions that normalize to the same
+// OpenAPI extension name.
 var ErrDuplicateExtensionName = errors.New(
 	"openapi/spec: duplicate extension name",
 )
 
 // Document is the document-level schema produced from endpoints.
 type Document struct {
-	OpenAPI  string   `json:"openapi,omitempty" yaml:"openapi,omitempty"`
-	Swagger  string   `json:"swagger,omitempty" yaml:"swagger,omitempty"`
-	Info     Info     `json:"info" yaml:"info"`
-	Servers  []Server `json:"servers,omitempty" yaml:"servers,omitempty"`
-	Host     string   `json:"host,omitempty" yaml:"host,omitempty"`
-	Schemes  []string `json:"schemes,omitempty" yaml:"schemes,omitempty"`
+	// OpenAPI is the OpenAPI 3.x version string.
+	OpenAPI string `json:"openapi,omitempty" yaml:"openapi,omitempty"`
+
+	// Swagger is the Swagger 2.0 version string.
+	Swagger string `json:"swagger,omitempty" yaml:"swagger,omitempty"`
+
+	// Info is the document metadata block.
+	Info Info `json:"info" yaml:"info"`
+
+	// Servers contains OpenAPI 3 server entries.
+	Servers []Server `json:"servers,omitempty" yaml:"servers,omitempty"`
+
+	// Host is the Swagger 2.0 host value.
+	Host string `json:"host,omitempty" yaml:"host,omitempty"`
+
+	// Schemes is the Swagger 2.0 list of accepted URL schemes.
+	Schemes []string `json:"schemes,omitempty" yaml:"schemes,omitempty"`
+
+	// Produces is the Swagger 2.0 document-level list of response media types.
 	Produces []string `json:"produces,omitempty" yaml:"produces,omitempty"`
-	Paths    Paths    `json:"paths" yaml:"paths"`
+
+	// Paths maps URL paths to operations.
+	Paths Paths `json:"paths" yaml:"paths"`
 }
 
 // Info is the generated document info block.
 type Info struct {
-	Title       string `json:"title" yaml:"title"`
+	// Title is the human-readable API document title.
+	Title string `json:"title" yaml:"title"`
+
+	// Description is optional document-level API context.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	Version     string `json:"version" yaml:"version"`
+
+	// Version is the service or API version represented by the document.
+	Version string `json:"version" yaml:"version"`
 }
 
 // Server is an OpenAPI 3 server entry.
 type Server struct {
+	// URL is the base URL for the API server.
 	URL string `json:"url" yaml:"url"`
 }
 
@@ -44,35 +69,67 @@ type Paths map[string]PathItem
 
 // PathItem is the per-path OpenAPI method container.
 type PathItem struct {
-	Get     *Operation `json:"get,omitempty" yaml:"get,omitempty"`
-	Put     *Operation `json:"put,omitempty" yaml:"put,omitempty"`
-	Post    *Operation `json:"post,omitempty" yaml:"post,omitempty"`
-	Delete  *Operation `json:"delete,omitempty" yaml:"delete,omitempty"`
+	// Get is the GET operation for the path.
+	Get *Operation `json:"get,omitempty" yaml:"get,omitempty"`
+
+	// Put is the PUT operation for the path.
+	Put *Operation `json:"put,omitempty" yaml:"put,omitempty"`
+
+	// Post is the POST operation for the path.
+	Post *Operation `json:"post,omitempty" yaml:"post,omitempty"`
+
+	// Delete is the DELETE operation for the path.
+	Delete *Operation `json:"delete,omitempty" yaml:"delete,omitempty"`
+
+	// Options is the OPTIONS operation for the path.
 	Options *Operation `json:"options,omitempty" yaml:"options,omitempty"`
-	Head    *Operation `json:"head,omitempty" yaml:"head,omitempty"`
-	Patch   *Operation `json:"patch,omitempty" yaml:"patch,omitempty"`
-	Trace   *Operation `json:"trace,omitempty" yaml:"trace,omitempty"`
+
+	// Head is the HEAD operation for the path.
+	Head *Operation `json:"head,omitempty" yaml:"head,omitempty"`
+
+	// Patch is the PATCH operation for the path.
+	Patch *Operation `json:"patch,omitempty" yaml:"patch,omitempty"`
+
+	// Trace is the TRACE operation for the path.
+	Trace *Operation `json:"trace,omitempty" yaml:"trace,omitempty"`
 }
 
 // Operation is the minimal operation shape used by endpoint transcription.
 type Operation struct {
-	OperationID string              `json:"operationId,omitempty" yaml:"operationId,omitempty"`
-	Summary     string              `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Consumes    []string            `json:"consumes,omitempty" yaml:"consumes,omitempty"`
-	Produces    []string            `json:"produces,omitempty" yaml:"produces,omitempty"`
-	Extensions  Extensions          `json:"-" yaml:"-"`
-	Responses   map[string]Response `json:"responses" yaml:"responses"`
+	// OperationID is the stable machine-readable operation identifier.
+	OperationID string `json:"operationId,omitempty" yaml:"operationId,omitempty"`
+
+	// Summary is a short human-readable operation summary.
+	Summary string `json:"summary,omitempty" yaml:"summary,omitempty"`
+
+	// Consumes is the Swagger 2.0 list of request media types.
+	Consumes []string `json:"consumes,omitempty" yaml:"consumes,omitempty"`
+
+	// Produces is the Swagger 2.0 list of response media types.
+	Produces []string `json:"produces,omitempty" yaml:"produces,omitempty"`
+
+	// Extensions stores OpenAPI Specification Extensions. MarshalJSON and
+	// MarshalYAML emit these values inline.
+	Extensions Extensions `json:"-" yaml:"-"`
+
+	// Responses maps response status codes or default to response objects.
+	Responses map[string]Response `json:"responses" yaml:"responses"`
 }
 
 // Response is the minimal OpenAPI response object.
 type Response struct {
+	// Description is the required human-readable response description.
 	Description string `json:"description" yaml:"description"`
 }
 
 // Extensions contains OpenAPI Specification Extensions for an object.
+//
+// Extension names must begin with x-.
 type Extensions map[string]any
 
 // SetExtension sets an OpenAPI Specification Extension on the operation.
+//
+// Existing extensions with the same normalized name are replaced.
 func (operation *Operation) SetExtension(name string, value any) error {
 	name = normalizeExtensionName(name)
 	if err := validateExtensionName(name); err != nil {

@@ -10,8 +10,13 @@ import (
 
 // Route is a resolved endpoint mount used by OpenAPI transcribers.
 type Route struct {
-	Method   endpointpkg.HttpMethod
-	Path     string
+	// Method is the resolved endpoint HTTP method.
+	Method endpointpkg.HttpMethod
+
+	// Path is the resolved path after joining group and transcriber prefixes.
+	Path string
+
+	// Endpoint is the endpoint whose metadata produced this route.
 	Endpoint endpointpkg.Endpoint
 }
 
@@ -29,6 +34,8 @@ func FromEndpoint(endpoint endpointpkg.Endpoint) (Routes, error) {
 }
 
 // FromGroup returns resolved endpoint routes for a group.
+//
+// Group defaults are applied before routes are returned.
 func FromGroup(group endpointpkg.EndpointGroup) (Routes, error) {
 	endpoints := group.ResolvedEndpoints()
 	if len(endpoints) == 0 {

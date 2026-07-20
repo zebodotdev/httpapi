@@ -6,36 +6,79 @@ package endpoint
 // live here so Req can remain a safe parse of an incoming request, independent
 // of the endpoint that eventually handles it.
 type EndpointSpec struct {
-	Method      HttpMethod
-	Path        string
-	Handler     Handler
-	Accepts     ContentType
-	AcceptsAny  []ContentType
-	Access      EndpointAccessSpec
+	// Method is the HTTP method accepted by the endpoint. Empty and unsupported
+	// values panic during endpoint construction.
+	Method HttpMethod
+
+	// Path is the route pattern registered on the Go ServeMux and later exposed
+	// to transcribers.
+	Path string
+
+	// Handler is the application function invoked after httpapi has parsed the
+	// request, authenticated it, applied access policy, and enforced idempotency.
+	Handler Handler
+
+	// Accepts is the primary request content type. It defaults to
+	// ApplicationJson.
+	Accepts ContentType
+
+	// AcceptsAny declares additional accepted request content types. Duplicate
+	// entries are removed after normalization.
+	AcceptsAny []ContentType
+
+	// Access declares whether the endpoint is internal and which session kind it
+	// requires.
+	Access EndpointAccessSpec
+
+	// Idempotency declares whether successful responses should be reserved and
+	// replayed for repeated idempotency keys.
 	Idempotency EndpointIdempotencySpec
-	Route       RouteSpec
-	Priority    EndpointPriority
-	Timeout     EndpointTimeoutSpec
+
+	// Route carries provider-neutral metadata for generated route documents.
+	Route RouteSpec
+
+	// Priority captures the operational importance of the endpoint.
+	Priority EndpointPriority
+
+	// Timeout declares in-process read, handler, and write deadlines for this
+	// endpoint.
+	Timeout EndpointTimeoutSpec
+
 	// TimeoutHandler renders the response when the handler context reaches its
 	// timeout before the endpoint produces a response. When unset, httpapi
 	// renders DefaultEndpointTimeoutHandler.
 	TimeoutHandler EndpointTimeoutHandler
-	AuthKeys       map[string]bool
+
+	// AuthKeys is an optional arbitrary key set for service-specific
+	// authorization metadata. httpapi clones the map before storing it.
+	AuthKeys map[string]bool
 }
 
 // EndpointAccessSpec declares endpoint access requirements.
 type EndpointAccessSpec struct {
-	Internal      bool
+	// Internal marks the endpoint as callable only by service sessions.
+	Internal bool
+
+	// Authorization declares whether a session is required and which session
+	// kind satisfies the endpoint.
 	Authorization AuthorizationRequirement
 }
 
 // EndpointIdempotencySpec declares endpoint idempotency behavior.
 type EndpointIdempotencySpec struct {
-	Enabled       bool
+	// Enabled requires callers to provide idempotency keys and stores successful
+	// responses for replay.
+	Enabled bool
+
+	// ScopeResolver computes a custom idempotency scope for a request. Providing
+	// a resolver implies Enabled even when Enabled is false.
 	ScopeResolver IdempotencyScopeResolver
 }
 
 // DefineEndpoint returns a server endpoint from a declarative endpoint spec.
+//
+// Prefer DefineEndpoint for new code because all runtime, access,
+// idempotency, priority, timeout, and route metadata lives in one named struct.
 func DefineEndpoint(spec EndpointSpec) Endpoint {
 	return endpointFromSpec(spec).withRebuiltHandler()
 }
@@ -111,6 +154,9 @@ func joinContentTypes(contentTypes []ContentType) string {
 }
 
 // WithAcceptedContentTypes sets every accepted request content type.
+//
+// It replaces the endpoint's existing content-type list rather than appending
+// to it.
 func WithAcceptedContentTypes(contentTypes ...ContentType) EndpointOption {
 	contentTypes = normalizeEndpointContentTypes("", contentTypes...)
 	return func(e *Endpoint) {
