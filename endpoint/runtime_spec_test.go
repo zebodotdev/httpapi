@@ -33,6 +33,9 @@ func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
 			},
 		},
 		Priority: " high ",
+		Limits: EndpointLimitsSpec{
+			MaxRequestBytes: 1024,
+		},
 		AuthKeys: authKeys,
 	})
 	authKeys["secret"] = false
@@ -82,6 +85,9 @@ func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
 	if endpoint.Priority() != EndpointPriorityHigh {
 		t.Fatalf("priority = %q, want %q", endpoint.Priority(), EndpointPriorityHigh)
 	}
+	if endpoint.LimitsSpec().MaxRequestBytes != 1024 {
+		t.Fatalf("max request bytes = %d, want 1024", endpoint.LimitsSpec().MaxRequestBytes)
+	}
 	if keys := endpoint.AuthKeys(); !keys["secret"] || keys["new"] {
 		t.Fatalf("auth keys were not cloned: %#v", keys)
 	}
@@ -110,6 +116,9 @@ func TestDefineEndpointDefaults(t *testing.T) {
 	}
 	if endpoint.IsIdempotent() {
 		t.Fatal("endpoint is unexpectedly idempotent")
+	}
+	if endpoint.LimitsSpec() != (EndpointLimitsSpec{}) {
+		t.Fatalf("limits = %#v, want zero value", endpoint.LimitsSpec())
 	}
 }
 

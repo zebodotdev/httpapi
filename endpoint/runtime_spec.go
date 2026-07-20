@@ -44,6 +44,11 @@ type EndpointSpec struct {
 	// endpoint.
 	Timeout EndpointTimeoutSpec
 
+	// Limits declares in-process request limits for this endpoint. MaxRequestBytes
+	// caps the full parsed request envelope, including the request line, headers,
+	// and body.
+	Limits EndpointLimitsSpec
+
 	// TimeoutHandler renders the response when the handler context reaches its
 	// timeout before the endpoint produces a response. When unset, httpapi
 	// renders DefaultEndpointTimeoutHandler.
@@ -111,6 +116,9 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 		timeout: endpointTimeoutPolicy{
 			timeout: normalizeEndpointTimeoutSpec(spec.Timeout),
 			handler: spec.TimeoutHandler,
+		},
+		limits: endpointLimitsPolicy{
+			limits: normalizeEndpointLimitsSpec(spec.Limits),
 		},
 		authKeys: cloneEndpointAuthKeys(spec.AuthKeys),
 	}

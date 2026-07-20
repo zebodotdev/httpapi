@@ -1,6 +1,8 @@
 package request
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +33,21 @@ func TestNewReqParsesBodyAndResetsReader(t *testing.T) {
 	}
 }
 
+func TestNewReqWithErrorReturnsBodyReadError(t *testing.T) {
+	want := errors.New("read failed")
+	httpReq := httptest.NewRequest(http.MethodPost, "/tasks", nil)
+	httpReq.Body = errReadCloser{err: want}
+
+	req, err := NewReqWithError(httpReq)
+
+	if req != nil {
+		t.Fatalf("req = %#v, want nil", req)
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want %v", err, want)
+	}
+}
+
 func TestReqImplementsResponseTarget(t *testing.T) {
 	req := &Req{}
 	res := &response.Res{
@@ -46,3 +63,17 @@ func TestReqImplementsResponseTarget(t *testing.T) {
 		t.Fatal("response target did not retain response")
 	}
 }
+
+type errReadCloser struct {
+	err error
+}
+
+func (r errReadCloser) Read([]byte) (int, error) {
+	return 0, r.err
+}
+
+func (r errReadCloser) Close() error {
+	return nil
+}
+
+var _ io.ReadCloser = errReadCloser{}

@@ -1,6 +1,9 @@
 package erreur
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 // RateLimited returns a 429 error when the client is sending requests too
 // quickly.
@@ -60,4 +63,19 @@ func PayloadTooLarge(code, message, detail string) *Error {
 		Code:    code,
 		URL:     URL(code),
 	}
+}
+
+// RequestTooLarge returns a 413 error when the full request exceeds the
+// endpoint's accepted size.
+func RequestTooLarge(maxBytes int64) *Error {
+	code := "request_too_large"
+	detail := "the full request, including the request line, headers, and body, exceeds this endpoint's configured size limit."
+	if maxBytes > 0 {
+		detail = fmt.Sprintf(
+			"the full request, including the request line, headers, and body, exceeds this endpoint's configured %d byte size limit.",
+			maxBytes,
+		)
+	}
+
+	return PayloadTooLarge(code, "request is too large", detail)
 }

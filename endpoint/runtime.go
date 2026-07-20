@@ -56,6 +56,7 @@ type Endpoint struct {
 	route      RouteSpec
 	priority   endpointPriorityPolicy
 	timeout    endpointTimeoutPolicy
+	limits     endpointLimitsPolicy
 	authKeys   map[string]bool
 }
 
@@ -133,6 +134,10 @@ type EndpointGroup struct {
 	// Timeout is the default runtime timeout budget inherited field-by-field by
 	// endpoints without their own timeout values.
 	Timeout EndpointTimeoutSpec
+
+	// Limits is the default runtime request limit inherited field-by-field by
+	// endpoints without their own limit values.
+	Limits EndpointLimitsSpec
 
 	// TimeoutHandler is the default response renderer for endpoint handler
 	// timeouts in this group.
@@ -347,10 +352,41 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 			return
 		}
 
+		if limitErr := enforceEndpointRequestLimit(w, r, endpoint.LimitsSpec()); limitErr != nil {
+			responsepkg.RenderErr(req, limitErr)
+			req.Dur = time.Since(startedAt)
+			written, err := writeRenderedResponse(w, req, timeout)
+			responseSizeBytes = written
+			if err != nil {
+				logr.Printf(
+					"failed to write request too large response:"+
+						" request_id=%s method=%s path=%s error=%v",
+					req.ID, req.Method(), req.Path(), err,
+				)
+			}
+
+			return
+		}
+
 		readDeadlineSet := setEndpointReadBodyDeadline(w, req, timeout)
-		parsedReq := requestpkg.NewReq(r)
+		parsedReq, parseErr := requestpkg.NewReqWithError(r)
 		if readDeadlineSet {
 			clearEndpointReadBodyDeadline(w, req)
+		}
+		if endpointRequestTooLargeError(parseErr) {
+			responsepkg.RenderErr(req, e.RequestTooLarge(endpoint.LimitsSpec().MaxRequestBytes))
+			req.Dur = time.Since(startedAt)
+			written, err := writeRenderedResponse(w, req, timeout)
+			responseSizeBytes = written
+			if err != nil {
+				logr.Printf(
+					"failed to write request too large response:"+
+						" request_id=%s method=%s path=%s error=%v",
+					req.ID, req.Method(), req.Path(), err,
+				)
+			}
+
+			return
 		}
 		if parsedReq == nil {
 			responsepkg.RenderErr(req, e.InvalidRequestBody())

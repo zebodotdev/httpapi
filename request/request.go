@@ -574,6 +574,19 @@ func NewID() string {
 // Authorization scheme matches the configured bearer or service schemes. It
 // returns nil when the request body cannot be read.
 func NewReq(req *http.Request) *Req {
+	parsed, err := NewReqWithError(req)
+	if err != nil {
+		return nil
+	}
+	return parsed
+}
+
+// NewReqWithError parses an http.Request into an httpapi Req and returns body
+// read errors to the caller.
+//
+// NewReqWithError is useful for endpoint runtimes that need to distinguish a
+// malformed body from transport-level read failures such as request-size limits.
+func NewReqWithError(req *http.Request) (*Req, error) {
 	if req.Body == nil {
 		req.Body = http.NoBody
 	}
@@ -589,7 +602,7 @@ func NewReq(req *http.Request) *Req {
 			err,
 		)
 
-		return nil
+		return nil, err
 	}
 	req.Body = io.NopCloser(bytes.NewReader(body))
 
@@ -602,7 +615,7 @@ func NewReq(req *http.Request) *Req {
 	}
 	if session := SessionFromContext(req.Context()); session != nil {
 		r.AttachSession(session)
-		return &r
+		return &r, nil
 	}
 
 	auth := r.Authorization()
@@ -639,7 +652,7 @@ func NewReq(req *http.Request) *Req {
 		}
 	}
 
-	return &r
+	return &r, nil
 }
 
 func serviceAuthorizationSchemeCase(schemes AuthorizationSchemes, candidate string) string {
