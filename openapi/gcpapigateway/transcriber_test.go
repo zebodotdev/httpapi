@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	httpapi "github.com/zebodotdev/httpapi"
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	"github.com/zebodotdev/httpapi/openapi/spec"
 )
 
 func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 	paths, err := Transcriber{
 		BackendAddress: "https://service.example.internal",
-	}.TranscribeEndpoint(httpapi.NewEndpoint(
-		httpapi.POST,
+	}.TranscribeEndpoint(endpointpkg.NewEndpoint(
+		endpointpkg.POST,
 		"/internal/sync",
 		noopGCPGatewayHandler,
-		httpapi.WithInternal(),
-		httpapi.WithRequiredAuthorization(httpapi.AuthorizationKindService),
+		endpointpkg.WithInternal(),
+		endpointpkg.WithRequiredAuthorization(endpointpkg.AuthorizationKindService),
 	))
 	if err != nil {
 		t.Fatalf("TranscribeEndpoint() error = %v", err)
@@ -36,10 +36,10 @@ func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 	if backend.PathTranslation != PathTranslationAppend {
 		t.Fatalf("path translation = %q", backend.PathTranslation)
 	}
-	if len(operation.Consumes) != 1 || operation.Consumes[0] != httpapi.ApplicationJson {
+	if len(operation.Consumes) != 1 || operation.Consumes[0] != endpointpkg.ApplicationJson {
 		t.Fatalf("consumes = %#v, want application/json", operation.Consumes)
 	}
-	if len(operation.Produces) != 1 || operation.Produces[0] != httpapi.ApplicationJson {
+	if len(operation.Produces) != 1 || operation.Produces[0] != endpointpkg.ApplicationJson {
 		t.Fatalf("produces = %#v, want application/json", operation.Produces)
 	}
 	if operation.Responses["default"].Description != PlaceholderResponseDescription {
@@ -53,8 +53,8 @@ func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 	if !ok {
 		t.Fatal("authorization metadata missing")
 	}
-	auth, ok := authValue.(httpapi.AuthorizationRequirement)
-	if !ok || auth.Kind != httpapi.AuthorizationKindService {
+	auth, ok := authValue.(endpointpkg.AuthorizationRequirement)
+	if !ok || auth.Kind != endpointpkg.AuthorizationKindService {
 		t.Fatalf("authorization metadata = %#v", authValue)
 	}
 
@@ -68,27 +68,27 @@ func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 }
 
 func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
-	group := httpapi.EndpointGroup{PathPrefix: "/orders"}
-	group.Add(httpapi.NewEndpoint(httpapi.POST, "/new", noopGCPGatewayHandler))
-	group.Add(httpapi.NewEndpoint(
-		httpapi.POST,
+	group := endpointpkg.EndpointGroup{PathPrefix: "/orders"}
+	group.Add(endpointpkg.NewEndpoint(endpointpkg.POST, "/new", noopGCPGatewayHandler))
+	group.Add(endpointpkg.NewEndpoint(
+		endpointpkg.POST,
 		"/lookup",
 		noopGCPGatewayHandler,
-		httpapi.WithRouteSpec(httpapi.RouteSpec{
+		endpointpkg.WithRouteSpec(endpointpkg.RouteSpec{
 			OperationID: "lookup_order",
-			Backend: httpapi.RouteBackend{
+			Backend: endpointpkg.RouteBackend{
 				Address:  "https://lookup.example.internal",
-				PathMode: httpapi.RoutePathModeConstant,
+				PathMode: endpointpkg.RoutePathModeConstant,
 				Timeout:  45 * time.Second,
 			},
 		}),
 	))
 
-	group.ConfigureRouteSpec(httpapi.RouteSpec{
+	group.ConfigureRouteSpec(endpointpkg.RouteSpec{
 		OperationID: "orders_group",
 		Summary:     "Orders endpoint",
 	})
-	group.ConfigureRouteBackend(httpapi.RouteBackend{
+	group.ConfigureRouteBackend(endpointpkg.RouteBackend{
 		Address: "https://tasks.example.internal",
 		Timeout: 20 * time.Second,
 	})
@@ -146,11 +146,11 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 }
 
 func TestTranscribeRejectsBackendTimeoutAboveGatewayLimit(t *testing.T) {
-	_, err := Transcriber{}.TranscribeEndpoint(httpapi.NewEndpoint(
-		httpapi.POST,
+	_, err := Transcriber{}.TranscribeEndpoint(endpointpkg.NewEndpoint(
+		endpointpkg.POST,
 		"/exports/start",
 		noopGCPGatewayHandler,
-		httpapi.WithRouteBackend(httpapi.RouteBackend{
+		endpointpkg.WithRouteBackend(endpointpkg.RouteBackend{
 			Address: "https://service.example.internal",
 			Timeout: BackendDeadlineMax + time.Second,
 		}),
@@ -166,7 +166,7 @@ func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
 		Host:           "api.example.gateway.dev",
 		BackendAddress: "https://service.example.internal",
 	}.TranscribeEndpointDocument(
-		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopGCPGatewayHandler),
+		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopGCPGatewayHandler),
 	)
 	if err != nil {
 		t.Fatalf("TranscribeEndpointDocument() error = %v", err)
@@ -184,7 +184,7 @@ func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
 	if len(doc.Schemes) != 1 || doc.Schemes[0] != DefaultScheme {
 		t.Fatalf("schemes = %#v", doc.Schemes)
 	}
-	if len(doc.Produces) != 1 || doc.Produces[0] != httpapi.ApplicationJson {
+	if len(doc.Produces) != 1 || doc.Produces[0] != endpointpkg.ApplicationJson {
 		t.Fatalf("produces = %#v", doc.Produces)
 	}
 	if operationBackend(t, *doc.Paths["/orders/new"].Post) == (Backend{}) {
@@ -196,14 +196,14 @@ func TestTranscribeDocumentRequiresVersion(t *testing.T) {
 	_, err := Transcriber{
 		BackendAddress: "https://service.example.internal",
 	}.TranscribeEndpointDocument(
-		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopGCPGatewayHandler),
+		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopGCPGatewayHandler),
 	)
 	if err != ErrDocumentVersionRequired {
 		t.Fatalf("error = %v, want ErrDocumentVersionRequired", err)
 	}
 }
 
-func noopGCPGatewayHandler(*httpapi.Req) {}
+func noopGCPGatewayHandler(*endpointpkg.Req) {}
 
 func operationBackend(t *testing.T, operation spec.Operation) Backend {
 	t.Helper()

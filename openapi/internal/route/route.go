@@ -5,21 +5,21 @@ import (
 	"net/url"
 	"strings"
 
-	httpapi "github.com/zebodotdev/httpapi"
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 )
 
 // Route is a resolved endpoint mount used by OpenAPI transcribers.
 type Route struct {
-	Method   httpapi.HttpMethod
+	Method   endpointpkg.HttpMethod
 	Path     string
-	Endpoint httpapi.Endpoint
+	Endpoint endpointpkg.Endpoint
 }
 
 // Routes is an ordered list of resolved endpoint mounts.
 type Routes []Route
 
 // FromEndpoint returns the route for one endpoint without a group prefix.
-func FromEndpoint(endpoint httpapi.Endpoint) (Routes, error) {
+func FromEndpoint(endpoint endpointpkg.Endpoint) (Routes, error) {
 	route, err := fromEndpoint("", endpoint)
 	if err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func FromEndpoint(endpoint httpapi.Endpoint) (Routes, error) {
 }
 
 // FromGroup returns resolved endpoint routes for a group.
-func FromGroup(group httpapi.EndpointGroup) (Routes, error) {
+func FromGroup(group endpointpkg.EndpointGroup) (Routes, error) {
 	endpoints := group.ResolvedEndpoints()
 	if len(endpoints) == 0 {
 		return nil, nil
@@ -49,7 +49,7 @@ func FromGroup(group httpapi.EndpointGroup) (Routes, error) {
 
 // FromGroups returns resolved endpoint routes for several groups while
 // preserving group and endpoint declaration order.
-func FromGroups(groups ...httpapi.EndpointGroup) (Routes, error) {
+func FromGroups(groups ...endpointpkg.EndpointGroup) (Routes, error) {
 	var routes Routes
 	for _, group := range groups {
 		groupRoutes, err := FromGroup(group)
@@ -81,7 +81,7 @@ func (routes Routes) WithPathPrefix(prefix string) (Routes, error) {
 	return prefixed, nil
 }
 
-func fromEndpoint(prefix string, endpoint httpapi.Endpoint) (Route, error) {
+func fromEndpoint(prefix string, endpoint endpointpkg.Endpoint) (Route, error) {
 	path, err := JoinPath(prefix, endpoint.Pattern())
 	if err != nil {
 		return Route{}, err

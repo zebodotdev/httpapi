@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	httpapi "github.com/zebodotdev/httpapi"
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	internalroute "github.com/zebodotdev/httpapi/openapi/internal/route"
 	"github.com/zebodotdev/httpapi/openapi/spec"
 )
@@ -33,7 +33,7 @@ type Transcriber struct {
 }
 
 // TranscribeEndpoint emits public OpenAPI path entries for one endpoint.
-func (t Transcriber) TranscribeEndpoint(endpoint httpapi.Endpoint) (spec.Paths, error) {
+func (t Transcriber) TranscribeEndpoint(endpoint endpointpkg.Endpoint) (spec.Paths, error) {
 	routes, err := internalroute.FromEndpoint(endpoint)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (t Transcriber) TranscribeEndpoint(endpoint httpapi.Endpoint) (spec.Paths, 
 }
 
 // TranscribeGroup emits public OpenAPI path entries for one endpoint group.
-func (t Transcriber) TranscribeGroup(group httpapi.EndpointGroup) (spec.Paths, error) {
+func (t Transcriber) TranscribeGroup(group endpointpkg.EndpointGroup) (spec.Paths, error) {
 	routes, err := internalroute.FromGroup(group)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func (t Transcriber) TranscribeGroup(group httpapi.EndpointGroup) (spec.Paths, e
 
 // TranscribeGroups emits public OpenAPI path entries for several endpoint
 // groups.
-func (t Transcriber) TranscribeGroups(groups ...httpapi.EndpointGroup) (spec.Paths, error) {
+func (t Transcriber) TranscribeGroups(groups ...endpointpkg.EndpointGroup) (spec.Paths, error) {
 	routes, err := internalroute.FromGroups(groups...)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (t Transcriber) TranscribeGroups(groups ...httpapi.EndpointGroup) (spec.Pat
 }
 
 // TranscribeEndpointDocument emits a public OpenAPI 3.1 document for one endpoint.
-func (t Transcriber) TranscribeEndpointDocument(endpoint httpapi.Endpoint) (spec.Document, error) {
+func (t Transcriber) TranscribeEndpointDocument(endpoint endpointpkg.Endpoint) (spec.Document, error) {
 	routes, err := internalroute.FromEndpoint(endpoint)
 	if err != nil {
 		return spec.Document{}, err
@@ -74,7 +74,7 @@ func (t Transcriber) TranscribeEndpointDocument(endpoint httpapi.Endpoint) (spec
 }
 
 // TranscribeGroupDocument emits a public OpenAPI 3.1 document for one endpoint group.
-func (t Transcriber) TranscribeGroupDocument(group httpapi.EndpointGroup) (spec.Document, error) {
+func (t Transcriber) TranscribeGroupDocument(group endpointpkg.EndpointGroup) (spec.Document, error) {
 	routes, err := internalroute.FromGroup(group)
 	if err != nil {
 		return spec.Document{}, err
@@ -85,7 +85,7 @@ func (t Transcriber) TranscribeGroupDocument(group httpapi.EndpointGroup) (spec.
 
 // TranscribeGroupsDocument emits a public OpenAPI 3.1 document for several
 // endpoint groups.
-func (t Transcriber) TranscribeGroupsDocument(groups ...httpapi.EndpointGroup) (spec.Document, error) {
+func (t Transcriber) TranscribeGroupsDocument(groups ...endpointpkg.EndpointGroup) (spec.Document, error) {
 	routes, err := internalroute.FromGroups(groups...)
 	if err != nil {
 		return spec.Document{}, err
@@ -200,7 +200,7 @@ func placeholderResponses() map[string]spec.Response {
 	}
 }
 
-func defaultOperationID(method httpapi.HttpMethod, path string) string {
+func defaultOperationID(method endpointpkg.HttpMethod, path string) string {
 	parts := []string{strings.ToLower(method)}
 	for _, part := range strings.FieldsFunc(path, operationIDSeparator) {
 		part = strings.Trim(part, "{}")

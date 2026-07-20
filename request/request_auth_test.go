@@ -1,7 +1,8 @@
-package httpapi
+package request
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestNewReqAuthenticatesServiceAlias(t *testing.T) {
 	))
 	t.Cleanup(restoreAuthenticator)
 
-	req := httptest.NewRequest(POST, "/alias", nil)
+	req := httptest.NewRequest(http.MethodPost, "/alias", nil)
 	req.Header.Set("authorization", "System-Internal token")
 
 	wrapped := NewReq(req)
@@ -47,7 +48,7 @@ func TestNewReqAuthenticatesServiceAlias(t *testing.T) {
 }
 
 func TestNewReqUsesContextSession(t *testing.T) {
-	req := httptest.NewRequest(POST, "/context", nil)
+	req := httptest.NewRequest(http.MethodPost, "/context", nil)
 	req = req.WithContext(ContextWithAuthenticatedApp(req.Context(), "app_context"))
 
 	wrapped := NewReq(req)

@@ -1,9 +1,7 @@
-// Package httpapi provides a reusable HTTP endpoint contract for services.
+// Package httpapi documents the module-level package layout.
 //
-// The package owns runtime endpoint definition, request wrapping, idempotency
-// orchestration, and response rendering. Provider-neutral auth contracts live in
-// the auth subpackage, endpoint metadata contracts live in the endpoint
-// subpackage, and OpenAPI/gateway writers live in companion transcriber
-// packages. Service-specific authentication, durable audit persistence, and
-// idempotency storage are injected through interfaces.
+// Runtime behavior intentionally lives in subpackages. Use endpoint for endpoint
+// definitions and groups, request for safe request parsing and authentication
+// attachment, response for rendering and response writing, auth for provider-
+// neutral auth/session contracts, and openapi/* for spec transcription.
 package httpapi

@@ -3,18 +3,18 @@ package route
 import (
 	"testing"
 
-	httpapi "github.com/zebodotdev/httpapi"
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 )
 
 func TestFromGroupResolvesMetadataAndPaths(t *testing.T) {
-	group := httpapi.EndpointGroup{
+	group := endpointpkg.EndpointGroup{
 		PathPrefix: "ops",
 		Internal:   true,
-		Priority:   httpapi.EndpointPriorityHigh,
+		Priority:   endpointpkg.EndpointPriorityHigh,
 	}
-	group.RequireAuthorization(httpapi.AuthorizationKindService)
-	group.Add(httpapi.NewEndpoint(httpapi.POST, "", noopRouteHandler))
-	group.Add(httpapi.NewEndpoint(httpapi.GET, "/lookup", noopRouteHandler))
+	group.RequireAuthorization(endpointpkg.AuthorizationKindService)
+	group.Add(endpointpkg.NewEndpoint(endpointpkg.POST, "", noopRouteHandler))
+	group.Add(endpointpkg.NewEndpoint(endpointpkg.GET, "/lookup", noopRouteHandler))
 
 	routes, err := FromGroup(group)
 	if err != nil {
@@ -27,29 +27,29 @@ func TestFromGroupResolvesMetadataAndPaths(t *testing.T) {
 	if routes[0].Path != "/ops" {
 		t.Fatalf("first path = %q, want /ops", routes[0].Path)
 	}
-	if routes[0].Method != httpapi.POST {
-		t.Fatalf("first method = %q, want %q", routes[0].Method, httpapi.POST)
+	if routes[0].Method != endpointpkg.POST {
+		t.Fatalf("first method = %q, want %q", routes[0].Method, endpointpkg.POST)
 	}
 	if !routes[0].Endpoint.IsInternal() {
 		t.Fatal("group metadata did not mark endpoint internal")
 	}
-	if routes[0].Endpoint.Authorization().Kind != httpapi.AuthorizationKindService {
+	if routes[0].Endpoint.Authorization().Kind != endpointpkg.AuthorizationKindService {
 		t.Fatalf("authorization kind = %q", routes[0].Endpoint.Authorization().Kind)
 	}
-	if routes[0].Endpoint.Priority() != httpapi.EndpointPriorityHigh {
-		t.Fatalf("priority = %q, want %q", routes[0].Endpoint.Priority(), httpapi.EndpointPriorityHigh)
+	if routes[0].Endpoint.Priority() != endpointpkg.EndpointPriorityHigh {
+		t.Fatalf("priority = %q, want %q", routes[0].Endpoint.Priority(), endpointpkg.EndpointPriorityHigh)
 	}
 
 	if routes[1].Path != "/ops/lookup" {
 		t.Fatalf("second path = %q, want /ops/lookup", routes[1].Path)
 	}
-	if routes[1].Method != httpapi.GET {
-		t.Fatalf("second method = %q, want %q", routes[1].Method, httpapi.GET)
+	if routes[1].Method != endpointpkg.GET {
+		t.Fatalf("second method = %q, want %q", routes[1].Method, endpointpkg.GET)
 	}
 }
 
 func TestRoutesWithPathPrefix(t *testing.T) {
-	routes, err := FromEndpoint(httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopRouteHandler))
+	routes, err := FromEndpoint(endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopRouteHandler))
 	if err != nil {
 		t.Fatalf("FromEndpoint() error = %v", err)
 	}
@@ -64,4 +64,4 @@ func TestRoutesWithPathPrefix(t *testing.T) {
 	}
 }
 
-func noopRouteHandler(*httpapi.Req) {}
+func noopRouteHandler(*endpointpkg.Req) {}

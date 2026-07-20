@@ -1,4 +1,4 @@
-package httpapi
+package response
 
 import (
 	"net/http"
@@ -8,8 +8,8 @@ import (
 )
 
 func TestRenderParamErrUsesCustomErrorFields(t *testing.T) {
-	req := &Req{}
-	RenderParamErr(req, &e.ErrInvalidParam{
+	target := &testTarget{}
+	RenderParamErr(target, &e.ErrInvalidParam{
 		Param:   "media.hero_image",
 		Mesg:    "wrong purpose",
 		Code:    "file_reference_purpose_mismatch",
@@ -19,13 +19,13 @@ func TestRenderParamErrUsesCustomErrorFields(t *testing.T) {
 		FixCode: e.FixCodeRepeatSame,
 	})
 
-	if req.Res.Status != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", req.Res.Status, http.StatusServiceUnavailable)
+	if target.res.Status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", target.res.Status, http.StatusServiceUnavailable)
 	}
 
-	body, ok := req.Res.Body.(ErrRes)
+	body, ok := target.res.Body.(ErrRes)
 	if !ok {
-		t.Fatalf("body = %T, want ErrRes", req.Res.Body)
+		t.Fatalf("body = %T, want ErrRes", target.res.Body)
 	}
 	if body.Err.Code != "file_reference_purpose_mismatch" {
 		t.Fatalf("code = %q", body.Err.Code)
@@ -36,19 +36,19 @@ func TestRenderParamErrUsesCustomErrorFields(t *testing.T) {
 }
 
 func TestRenderErrUsesErreurResponseStatus(t *testing.T) {
-	req := &Req{}
-	RenderErr(req, e.MethodNotAllowed(POST, GET))
+	target := &testTarget{}
+	RenderErr(target, e.MethodNotAllowed(http.MethodPost, http.MethodGet))
 
-	if req.Res.Status != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want %d", req.Res.Status, http.StatusMethodNotAllowed)
+	if target.res.Status != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", target.res.Status, http.StatusMethodNotAllowed)
 	}
-	if req.Res.ContentType != ApplicationJson {
-		t.Fatalf("content_type = %q, want %q", req.Res.ContentType, ApplicationJson)
+	if target.res.ContentType != ApplicationJson {
+		t.Fatalf("content_type = %q, want %q", target.res.ContentType, ApplicationJson)
 	}
 
-	body, ok := req.Res.Body.(ErrRes)
+	body, ok := target.res.Body.(ErrRes)
 	if !ok {
-		t.Fatalf("body = %T, want ErrRes", req.Res.Body)
+		t.Fatalf("body = %T, want ErrRes", target.res.Body)
 	}
 	if body.Err.Code != "method_not_allowed" {
 		t.Fatalf("code = %q, want method_not_allowed", body.Err.Code)
@@ -59,16 +59,16 @@ func TestRenderErrUsesErreurResponseStatus(t *testing.T) {
 }
 
 func TestRenderErrDefaultsNilToUnexpected(t *testing.T) {
-	req := &Req{}
-	RenderErr(req, nil)
+	target := &testTarget{}
+	RenderErr(target, nil)
 
-	if req.Res.Status != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", req.Res.Status, http.StatusInternalServerError)
+	if target.res.Status != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", target.res.Status, http.StatusInternalServerError)
 	}
 
-	body, ok := req.Res.Body.(ErrRes)
+	body, ok := target.res.Body.(ErrRes)
 	if !ok {
-		t.Fatalf("body = %T, want ErrRes", req.Res.Body)
+		t.Fatalf("body = %T, want ErrRes", target.res.Body)
 	}
 	if body.Err.Code != "request_failed" {
 		t.Fatalf("code = %q, want request_failed", body.Err.Code)

@@ -1,4 +1,4 @@
-package httpapi
+package request
 
 import (
 	"encoding/json"
@@ -7,10 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	responsepkg "github.com/zebodotdev/httpapi/response"
 )
 
 func TestNewReqRestoresRequestBody(t *testing.T) {
-	req := httptest.NewRequest(POST, "/upload", strings.NewReader("multipart-body"))
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("multipart-body"))
 
 	wrapped := NewReq(req)
 	if wrapped == nil {
@@ -31,7 +33,7 @@ func TestNewReqRestoresRequestBody(t *testing.T) {
 
 func TestReqMarshalJSONRedactsAuditSensitiveData(t *testing.T) {
 	req := httptest.NewRequest(
-		POST,
+		http.MethodPost,
 		"/files/create?token=query-secret#fragment-secret",
 		strings.NewReader(`{"secret":"body-secret"}`),
 	)
@@ -44,8 +46,8 @@ func TestReqMarshalJSONRedactsAuditSensitiveData(t *testing.T) {
 	if wrapped == nil {
 		t.Fatal("request was not wrapped")
 	}
-	wrapped.Res = &Res{
-		ContentType: ApplicationJson,
+	wrapped.Res = &responsepkg.Res{
+		ContentType: responsepkg.ApplicationJson,
 		Status:      http.StatusCreated,
 		Header: http.Header{
 			"Location":   []string{"https://signed.example.test/private-object?token=response-location-secret"},

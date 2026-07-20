@@ -5,30 +5,30 @@ import (
 	"strings"
 	"testing"
 
-	httpapi "github.com/zebodotdev/httpapi"
+	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 )
 
 func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
-	group := httpapi.EndpointGroup{PathPrefix: "/ops"}
-	group.Add(httpapi.NewEndpoint(
-		httpapi.POST,
+	group := endpointpkg.EndpointGroup{PathPrefix: "/ops"}
+	group.Add(endpointpkg.NewEndpoint(
+		endpointpkg.POST,
 		"/public",
 		noopOpenAPI31Handler,
-		httpapi.WithRequiredAuthorization(httpapi.AuthorizationKindBearer),
-		httpapi.WithPriority(httpapi.EndpointPriorityHigh),
-		httpapi.WithRouteSpec(httpapi.RouteSpec{
+		endpointpkg.WithRequiredAuthorization(endpointpkg.AuthorizationKindBearer),
+		endpointpkg.WithPriority(endpointpkg.EndpointPriorityHigh),
+		endpointpkg.WithRouteSpec(endpointpkg.RouteSpec{
 			OperationID: "public_operation",
 			Summary:     "Public operation",
-			Backend: httpapi.RouteBackend{
+			Backend: endpointpkg.RouteBackend{
 				Address: "https://service.example.internal",
 			},
 		}),
 	))
-	group.Add(httpapi.NewEndpoint(
-		httpapi.POST,
+	group.Add(endpointpkg.NewEndpoint(
+		endpointpkg.POST,
 		"/internal",
 		noopOpenAPI31Handler,
-		httpapi.WithInternal(),
+		endpointpkg.WithInternal(),
 	))
 
 	paths, err := Transcriber{}.TranscribeGroup(group)
@@ -53,12 +53,12 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("authorization metadata missing")
 	}
-	auth, ok := authValue.(httpapi.AuthorizationRequirement)
-	if !ok || auth.Kind != httpapi.AuthorizationKindBearer {
+	auth, ok := authValue.(endpointpkg.AuthorizationRequirement)
+	if !ok || auth.Kind != endpointpkg.AuthorizationKindBearer {
 		t.Fatalf("authorization metadata = %#v", authValue)
 	}
 	priority, ok := operation.Extension(HTTPAPIPriorityExtensionName)
-	if !ok || priority != httpapi.EndpointPriorityHigh {
+	if !ok || priority != endpointpkg.EndpointPriorityHigh {
 		t.Fatalf("priority = %#v", priority)
 	}
 	encoded, err := json.Marshal(paths)
@@ -81,7 +81,7 @@ func TestTranscribeDocumentIncludesVersionAndServer(t *testing.T) {
 		Version:   "2026-07-18",
 		ServerURL: "https://api.example.com",
 	}.TranscribeEndpointDocument(
-		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopOpenAPI31Handler),
+		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopOpenAPI31Handler),
 	)
 	if err != nil {
 		t.Fatalf("TranscribeEndpointDocument() error = %v", err)
@@ -103,7 +103,7 @@ func TestTranscribeDocumentIncludesVersionAndServer(t *testing.T) {
 
 func TestTranscribeDocumentRequiresVersion(t *testing.T) {
 	_, err := Transcriber{}.TranscribeEndpointDocument(
-		httpapi.NewEndpoint(httpapi.POST, "/orders/new", noopOpenAPI31Handler),
+		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopOpenAPI31Handler),
 	)
 	if err != ErrDocumentVersionRequired {
 		t.Fatalf("error = %v, want ErrDocumentVersionRequired", err)
@@ -111,9 +111,9 @@ func TestTranscribeDocumentRequiresVersion(t *testing.T) {
 }
 
 func TestTranscribeWithPathPrefix(t *testing.T) {
-	group := httpapi.EndpointGroup{PathPrefix: "orders"}
-	group.Add(httpapi.NewEndpoint(httpapi.POST, "", noopOpenAPI31Handler))
-	group.Add(httpapi.NewEndpoint(httpapi.GET, "/lookup", noopOpenAPI31Handler))
+	group := endpointpkg.EndpointGroup{PathPrefix: "orders"}
+	group.Add(endpointpkg.NewEndpoint(endpointpkg.POST, "", noopOpenAPI31Handler))
+	group.Add(endpointpkg.NewEndpoint(endpointpkg.GET, "/lookup", noopOpenAPI31Handler))
 
 	paths, err := Transcriber{PathPrefix: "/v1"}.TranscribeGroup(group)
 	if err != nil {
@@ -128,4 +128,4 @@ func TestTranscribeWithPathPrefix(t *testing.T) {
 	}
 }
 
-func noopOpenAPI31Handler(*httpapi.Req) {}
+func noopOpenAPI31Handler(*endpointpkg.Req) {}

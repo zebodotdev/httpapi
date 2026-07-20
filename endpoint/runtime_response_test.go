@@ -1,4 +1,4 @@
-package httpapi
+package endpoint
 
 import (
 	"io"
@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	responsepkg "github.com/zebodotdev/httpapi/response"
 )
 
 func TestEndpointWritesStreamResponse(t *testing.T) {
@@ -13,7 +15,7 @@ func TestEndpointWritesStreamResponse(t *testing.T) {
 		Method: POST,
 		Path:   "/stream",
 		Handler: func(r *Req) {
-			RenderStream(
+			responsepkg.RenderStream(
 				r,
 				http.StatusAccepted,
 				"text/plain",

@@ -1,4 +1,4 @@
-package httpapi
+package response
 
 import (
 	"net/http"
@@ -17,7 +17,7 @@ func TestWriteResponseWritesJSONResponse(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	result, err := WriteResponse(rec, res, ResponseWriteOptions{
+	result, err := WriteResponse(rec, res, WriteOptions{
 		RequestID: "req_123",
 		Duration:  12 * time.Millisecond,
 	})
@@ -57,7 +57,7 @@ func TestWriteResponseWritesPlainTextString(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	result, err := WriteResponse(rec, res, ResponseWriteOptions{RequestID: "req_123"})
+	result, err := WriteResponse(rec, res, WriteOptions{RequestID: "req_123"})
 
 	if err != nil {
 		t.Fatalf("WriteResponse error = %v", err)
@@ -80,7 +80,7 @@ func TestWriteResponseStreamsAndClosesBody(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	result, err := WriteResponse(rec, res, ResponseWriteOptions{RequestID: "req_123"})
+	result, err := WriteResponse(rec, res, WriteOptions{RequestID: "req_123"})
 
 	if err != nil {
 		t.Fatalf("WriteResponse error = %v", err)
@@ -108,7 +108,7 @@ func TestWriteResponseReturnsBeforeHeadersOnEncodeError(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 
-	result, err := WriteResponse(rec, res, ResponseWriteOptions{RequestID: "req_123"})
+	result, err := WriteResponse(rec, res, WriteOptions{RequestID: "req_123"})
 
 	if err == nil {
 		t.Fatal("WriteResponse error = nil, want encode error")
