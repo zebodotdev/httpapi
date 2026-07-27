@@ -2,8 +2,10 @@
 //
 // Runtime behavior intentionally lives in subpackages. Use endpoint for endpoint
 // definitions and groups, request for safe request parsing and authentication
-// attachment, response for rendering and response writing, auth for provider-
-// neutral auth/session contracts, and openapi/* for spec transcription.
+// attachment, caller for provider-neutral caller labels, param for reusable
+// request-parameter definitions, response for rendering and response writing,
+// auth for provider-neutral auth/session contracts, and openapi/* for spec
+// transcription.
 //
 // The root package is intentionally doc-only so external consumers import the
 // narrow package that owns the behavior they need.

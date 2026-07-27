@@ -10,7 +10,7 @@ The package owns:
 - endpoint groups and mounting,
 - request parsing/audit via `github.com/zebodotdev/httpapi/request`,
 - response rendering/writing via `github.com/zebodotdev/httpapi/response`,
-- auth/internal/priority/route/timeout metadata,
+- auth/caller/internal/priority/route/timeout metadata,
 - endpoint access enforcement,
 - idempotency orchestration,
 - redacted request audit serialization,
@@ -27,41 +27,50 @@ systems, or service configuration packages.
 Define new endpoints with `EndpointSpec`:
 
 ```go
-endpoint := httpapi.DefineEndpoint(httpapi.EndpointSpec{
-	Method:  httpapi.POST,
+var TasksUI = caller.Define("tasks-ui")
+
+createTask := endpoint.DefineEndpoint(endpoint.EndpointSpec{
+	Method:  endpoint.POST,
 	Path:    "/tasks/create",
 	Handler: handler,
-	Access: httpapi.EndpointAccessSpec{
-		Authorization: httpapi.RequiredAuthorization(
-			httpapi.AuthorizationKindService,
+	Access: endpoint.EndpointAccessSpec{
+		Authorization: endpoint.RequiredAuthorization(
+			endpoint.AuthorizationKindService,
 		),
+		Callers: []caller.Caller{TasksUI},
 	},
-	Route: httpapi.RouteSpec{
+	Route: endpoint.RouteSpec{
 		OperationID: "create_task",
 		Summary:     "Create task",
-		Backend: httpapi.RouteBackend{
+		Backend: endpoint.RouteBackend{
 			Address:  "https://tasks.example.internal",
-			PathMode: httpapi.RoutePathModeAppend,
+			PathMode: endpoint.RoutePathModeAppend,
 			Timeout:  30 * time.Second,
 		},
 	},
-	Timeout: httpapi.EndpointTimeoutSpec{
+	Timeout: endpoint.EndpointTimeoutSpec{
 		ReadBody: 2 * time.Second,
 		Handler:  10 * time.Second,
 		Write:    2 * time.Second,
 	},
-	TimeoutHandler: func(req *httpapi.Req) {
-		httpapi.RenderJSON(req, http.StatusAccepted, map[string]string{
+	TimeoutHandler: func(req *endpoint.Req) {
+		response.RenderJSON(req, http.StatusAccepted, map[string]string{
 			"status": "queued_after_timeout",
 		})
 	},
-	Priority: httpapi.EndpointPriorityHigh,
+	Priority: endpoint.EndpointPriorityHigh,
 })
 ```
 
 `NewEndpoint`, `NewIdempotentEndpoint`, and
 `NewIdempotentEndpointWithScopeResolver` remain as compatibility constructors,
 but new code should prefer the declarative spec.
+
+Caller availability uses stable definitions from
+`github.com/zebodotdev/httpapi/caller`, for example
+`TasksUI := caller.Define("tasks-ui")`. Services attach the active caller with
+`request.ContextWithCaller` or equivalent trusted middleware before mounting
+endpoints.
 
 `Timeout.ReadBody`, `Timeout.Handler`, and `Timeout.Write` are runtime budgets
 for request body parsing, endpoint execution, and response writing. If the
@@ -74,12 +83,12 @@ handler budget expires before a response is produced, httpapi calls
 Authentication is injected with `ConfigureAuthenticator`:
 
 ```go
-restore := httpapi.ConfigureAuthenticator(httpapi.AuthenticatorFunc(
-	func(ctx context.Context, req *httpapi.Req, auth httpapi.AuthenticationRequest) (*httpapi.Session, error) {
+restore := request.ConfigureAuthenticator(request.AuthenticatorFunc(
+	func(ctx context.Context, req *request.Req, auth request.AuthenticationRequest) (*request.Session, error) {
 		// Call the service's auth boundary here, then return a session.
-		return &httpapi.Session{
+		return &request.Session{
 			ID:        "sess_...",
-			App:       httpapi.App{ID: "app_..."},
+			App:       request.App{ID: "app_..."},
 			AuthMode:  auth.Type,
 			ExpiresAt: time.Now().Add(5 * time.Minute),
 		}, nil
@@ -92,25 +101,27 @@ defer restore()
 Services can rename either scheme:
 
 ```go
-restore := httpapi.ConfigureAuthorizationSchemes(httpapi.AuthorizationSchemes{
+restore := request.ConfigureAuthorizationSchemes(request.AuthorizationSchemes{
 	Service: "Internal-Service",
 })
 defer restore()
 ```
 
-Completed request audits are injected with `ConfigureAuditSink`. The default
-sink is a no-op.
+Completed request audits are injected with `endpoint.ConfigureAuditSink`. The
+default sink is a no-op.
 
-Idempotency storage is injected with `ConfigureIdempotencyStore`. Idempotent
-endpoints fail closed with `idempotency_storage_unavailable` until a store is
-configured. Services should also call `ConfigureIdempotencyScopeNamespace` with
-their service name so default scopes do not collide across services.
+Idempotency storage is injected with `endpoint.ConfigureIdempotencyStore`.
+Idempotent endpoints fail closed with `idempotency_storage_unavailable` until a
+store is configured. Services should also call
+`endpoint.ConfigureIdempotencyScopeNamespace` with their service name so default
+scopes do not collide across services.
 
 ## Transcription
 
 Endpoint metadata is provider-neutral. Target-specific writers translate
-`RouteSpec` and `RouteBackend` into their own document fields. Pass endpoints or
-endpoint groups directly to the transcriber for the OpenAPI target you need.
+`endpoint.RouteSpec` and `endpoint.RouteBackend` into their own document fields.
+Pass endpoints or endpoint groups directly to the transcriber for the OpenAPI
+target you need.
 
 ```go
 doc, err := gcpapigateway.Transcriber{
@@ -127,8 +138,7 @@ shapes live in `github.com/zebodotdev/httpapi/openapi/spec`.
 
 ## Package Boundaries
 
-The root package remains a compatibility facade for common imports. New package
-boundaries should follow ownership:
+The root package is doc-only. Import the package that owns the behavior you need:
 
 - `endpoint` contains endpoint contract primitives such as method, content
   types, route metadata, priority, and timeout specs.
@@ -136,8 +146,10 @@ boundaries should follow ownership:
   request serialization.
 - `response` contains `Res`, render helpers, response encoding, streaming, and
   HTTP response writing.
-- Root `httpapi` wires these together into the endpoint runtime and re-exports
-  common types while callers migrate gradually.
+- `caller` contains stable, provider-neutral request source definitions used by
+  endpoint, request, and param availability.
+- `param` contains request payload parsing, parameter null policy, size checks,
+  relationship rules, and parameter caller availability.
 
 ## Extraction Boundary
 
