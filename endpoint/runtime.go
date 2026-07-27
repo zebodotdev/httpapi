@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	callerpkg "github.com/zebodotdev/httpapi/caller"
 	e "github.com/zebodotdev/httpapi/erreur"
 	requestpkg "github.com/zebodotdev/httpapi/request"
 	responsepkg "github.com/zebodotdev/httpapi/response"
@@ -104,6 +105,19 @@ func (e Endpoint) Priority() EndpointPriority { return e.priorityPolicy().priori
 // AuthKeys returns a copy of endpoint authorization metadata keys.
 func (e Endpoint) AuthKeys() map[string]bool { return cloneEndpointAuthKeys(e.authKeys) }
 
+// CallerAvailability returns the caller set allowed to invoke the endpoint.
+func (e Endpoint) CallerAvailability() callerpkg.Set { return e.callerAvailability() }
+
+// AvailableCallers returns the endpoint's allowed callers in definition order.
+func (e Endpoint) AvailableCallers() []callerpkg.Caller {
+	return e.CallerAvailability().Callers()
+}
+
+// AvailableTo reports whether caller may invoke the endpoint.
+func (e Endpoint) AvailableTo(caller callerpkg.Caller) bool {
+	return e.CallerAvailability().Allows(caller)
+}
+
 // EndpointGroup groups endpoints together under one path prefix and applies
 // shared defaults to each endpoint.
 type EndpointGroup struct {
@@ -121,6 +135,12 @@ type EndpointGroup struct {
 	// Auth is the default authorization requirement inherited by endpoints that
 	// do not declare their own requirement.
 	Auth AuthorizationRequirement
+
+	// Callers restricts every endpoint in the group to these application-defined
+	// caller labels. Endpoint-level caller availability can narrow this set but
+	// cannot widen it. Leave it empty to make the group available to every
+	// caller.
+	Callers []callerpkg.Caller
 
 	// Route is the default route metadata inherited by endpoint RouteSpec
 	// values. OperationID is intentionally not inherited because it must be

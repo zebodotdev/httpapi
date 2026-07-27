@@ -1,6 +1,9 @@
 package endpoint
 
-import authpkg "github.com/zebodotdev/httpapi/auth"
+import (
+	authpkg "github.com/zebodotdev/httpapi/auth"
+	callerpkg "github.com/zebodotdev/httpapi/caller"
+)
 
 // AuthorizationKind identifies the authorization scheme an endpoint requires.
 type AuthorizationKind = authpkg.AuthorizationKind
@@ -22,6 +25,8 @@ type endpointAccessPolicy struct {
 	internal      bool
 	auth          AuthorizationRequirement
 	authInherited bool
+	callers       callerpkg.Set
+	groupCallers  callerpkg.Set
 }
 
 // EndpointOption applies endpoint metadata at construction time.
@@ -51,6 +56,16 @@ func WithRequiredAuthorization(kind AuthorizationKind) EndpointOption {
 // WithAuthorization is an alias for WithRequiredAuthorization.
 func WithAuthorization(kind AuthorizationKind) EndpointOption {
 	return WithRequiredAuthorization(kind)
+}
+
+// AvailableTo restricts an endpoint to the named callers.
+//
+// Omit AvailableTo to leave the endpoint available to every caller.
+func AvailableTo(callers ...callerpkg.Caller) EndpointOption {
+	set := callerpkg.AvailableTo(callers...)
+	return func(e *Endpoint) {
+		e.mutableAccessPolicy().callers = set
+	}
 }
 
 // RequiredAuthorization returns an authorization requirement for an endpoint
@@ -84,6 +99,19 @@ func (eg *EndpointGroup) RequireAuthorization(kind AuthorizationKind) {
 	}
 }
 
+// AvailableTo restricts every endpoint in the group to the named callers.
+//
+// Endpoint-level caller availability can narrow this group set, but it cannot
+// widen it. Omit AvailableTo to leave the group available to every caller.
+func (eg *EndpointGroup) AvailableTo(callers ...callerpkg.Caller) {
+	eg.Callers = callerpkg.AvailableTo(callers...).Callers()
+	for i := range eg.Endpoints {
+		policy := eg.Endpoints[i].mutableAccessPolicy()
+		policy.groupCallers = callerpkg.SetOf(eg.Callers...)
+		eg.Endpoints[i] = eg.Endpoints[i].withRebuiltHandler()
+	}
+}
+
 func requiredAuthorization(kind AuthorizationKind) AuthorizationRequirement {
 	return authpkg.RequiredAuthorization(kind)
 }
@@ -113,6 +141,8 @@ func (eg EndpointGroup) endpointWithGroupMetadata(endpoint Endpoint) Endpoint {
 		policy.authInherited = true
 	}
 
+	policy.groupCallers = callerpkg.SetOf(eg.Callers...)
+
 	priority := normalizeEndpointPriority(eg.Priority)
 	priorityPolicy := endpoint.mutablePriorityPolicy()
 	if priority != "" && (priorityPolicy.priority == "" || priorityPolicy.inherited) {
@@ -126,6 +156,26 @@ func (eg EndpointGroup) endpointWithGroupMetadata(endpoint Endpoint) Endpoint {
 	endpoint.route = endpoint.routeSpec().WithDefaults(eg.Route)
 
 	return endpoint.withRebuiltHandler()
+}
+
+// RestrictsCallers reports whether this endpoint has a caller allow-list.
+func (e Endpoint) RestrictsCallers() bool {
+	return e.CallerAvailability().Restricted()
+}
+
+func (e Endpoint) callerAvailability() callerpkg.Set {
+	return e.accessPolicy().allowedCallers()
+}
+
+func (policy endpointAccessPolicy) allowedCallers() callerpkg.Set {
+	return policy.callers.Intersect(policy.groupCallers)
+}
+
+func requestCaller(r *Req) callerpkg.Caller {
+	if r == nil {
+		return callerpkg.Caller{}
+	}
+	return r.Caller
 }
 
 func (e Endpoint) accessPolicy() endpointAccessPolicy {

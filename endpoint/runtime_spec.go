@@ -1,5 +1,7 @@
 package endpoint
 
+import callerpkg "github.com/zebodotdev/httpapi/caller"
+
 // EndpointSpec is the declarative contract for one HTTP endpoint.
 //
 // It should be the preferred way to define new endpoints. Endpoint requirements
@@ -26,8 +28,8 @@ type EndpointSpec struct {
 	// entries are removed after normalization.
 	AcceptsAny []ContentType
 
-	// Access declares whether the endpoint is internal and which session kind it
-	// requires.
+	// Access declares whether the endpoint is internal, which session kind it
+	// requires, and which application-defined callers may invoke it.
 	Access EndpointAccessSpec
 
 	// Idempotency declares whether successful responses should be reserved and
@@ -67,6 +69,10 @@ type EndpointAccessSpec struct {
 	// Authorization declares whether a session is required and which session
 	// kind satisfies the endpoint.
 	Authorization AuthorizationRequirement
+
+	// Callers restricts the endpoint to application-defined caller labels.
+	// Leave it empty to make the endpoint available to every caller.
+	Callers []callerpkg.Caller
 }
 
 // EndpointIdempotencySpec declares endpoint idempotency behavior.
@@ -108,6 +114,7 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 		access: endpointAccessPolicy{
 			internal: spec.Access.Internal,
 			auth:     normalizeAuthorizationRequirement(spec.Access.Authorization),
+			callers:  callerpkg.SetOf(spec.Access.Callers...),
 		},
 		route: normalizeRouteSpec(spec.Route),
 		priority: endpointPriorityPolicy{

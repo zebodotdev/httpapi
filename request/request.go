@@ -107,6 +107,10 @@ type Req struct {
 	// configured Authenticator.
 	Sess *Session `json:"session"`
 
+	// Caller is the application-defined request source attached by trusted
+	// middleware or tests.
+	Caller Caller `json:"caller,omitempty"`
+
 	// AuthFailure records credential parsing or authentication failure details
 	// for audit output.
 	AuthFailure *AuthFailure `json:"auth_failure,omitempty"`
@@ -159,6 +163,7 @@ func (r Req) MarshalJSON() ([]byte, error) {
 		Err                  *e.Error       `json:"error,omitempty"`
 		Dur                  time.Duration  `json:"duration"`
 		ID                   string         `json:"id"`
+		Caller               Caller         `json:"caller,omitempty"`
 		Auth                 AuthAudit      `json:"auth"`
 		AuthFailure          *AuthFailure   `json:"auth_failure,omitempty"`
 		AuthorizationFailure *AuthFailure   `json:"authorization_failure,omitempty"`
@@ -176,6 +181,7 @@ func (r Req) MarshalJSON() ([]byte, error) {
 		Err:                  r.Err,
 		Dur:                  r.Dur,
 		ID:                   r.ID,
+		Caller:               r.Caller,
 		Auth:                 r.authAudit(),
 		AuthFailure:          r.AuthFailure,
 		AuthorizationFailure: r.AuthorizationFailure,
@@ -615,6 +621,12 @@ func NewReqWithError(req *http.Request) (*Req, error) {
 	}
 	if session := SessionFromContext(req.Context()); session != nil {
 		r.AttachSession(session)
+	}
+	if caller := CallerFromContext(req.Context()); caller.Defined() {
+		r.AttachCaller(caller)
+	}
+
+	if r.Sess != nil {
 		return &r, nil
 	}
 

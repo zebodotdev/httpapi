@@ -10,6 +10,8 @@ import (
 const (
 	endpointAuthenticationRequiredCode         = "endpoint_authentication_required"
 	endpointAuthorizationDeniedCode            = "endpoint_authorization_denied"
+	endpointCallerRequiredCode                 = "endpoint_caller_required"
+	endpointCallerDeniedCode                   = "endpoint_caller_denied"
 	internalEndpointAuthenticationRequiredCode = "internal_endpoint_authentication_required"
 	internalEndpointAuthorizationDeniedCode    = "internal_endpoint_authorization_denied"
 	authAuditTypeEndpoint                      = authpkg.AuditTypeEndpoint
@@ -44,7 +46,7 @@ func (e Endpoint) accessError(r *Req) *errresp.Error {
 	}
 
 	if !policy.auth.Required {
-		return nil
+		return e.callerAccessError(r, policy)
 	}
 
 	if r == nil || r.Sess == nil || !r.Authorized() {
@@ -58,13 +60,43 @@ func (e Endpoint) accessError(r *Req) *errresp.Error {
 	}
 
 	if sessionSatisfiesAuthorization(r.Sess, policy.auth.Kind) {
-		return nil
+		return e.callerAccessError(r, policy)
 	}
 
 	err := errresp.Forbidden(
 		endpointAuthorizationDeniedCode,
 		"endpoint authorization denied",
 		fmt.Sprintf("this endpoint requires %s authorization.", policy.auth.Kind),
+	)
+	recordEndpointAccessFailure(r, err)
+	return err
+}
+
+func (e Endpoint) callerAccessError(r *Req, policy endpointAccessPolicy) *errresp.Error {
+	availability := policy.allowedCallers()
+	if !availability.Restricted() {
+		return nil
+	}
+
+	caller := requestCaller(r)
+	if !caller.Defined() {
+		err := errresp.Unauthenticated(
+			endpointCallerRequiredCode,
+			"endpoint caller is required",
+			"this endpoint requires an application-defined caller label before it can be invoked.",
+		)
+		recordEndpointAccessFailure(r, err)
+		return err
+	}
+
+	if availability.Allows(caller) {
+		return nil
+	}
+
+	err := errresp.Forbidden(
+		endpointCallerDeniedCode,
+		"endpoint caller is not allowed",
+		"this endpoint cannot be called by the active application-defined caller.",
 	)
 	recordEndpointAccessFailure(r, err)
 	return err
