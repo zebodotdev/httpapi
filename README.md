@@ -28,8 +28,12 @@ Use the narrow package that owns the behavior you need:
 - `param` parses JSON request bodies into endpoint-owned domain parameters.
 - `response` builds responses, projects response shapes, filters
   caller-specific attributes, and writes HTTP responses.
-- `endpoint` defines endpoint contracts and enforces method, content type,
-  auth, caller availability, idempotency, timeout, and request-size policy.
+- `endpoint` defines endpoint contracts, provides the default mux, and enforces
+  method, content type, auth, caller availability, idempotency, timeout, and
+  request-size policy.
+- `server` builds an `http.Server` around an `endpoint.Mux` or custom
+  `http.Handler` with conservative defaults, CORS middleware, and an explicit
+  middleware chain.
 - `openapi/*` transcribes endpoint metadata into target documents.
 
 The important separation is:
@@ -299,7 +303,8 @@ should prefer `DefineEndpoint`.
 
 ## Endpoint Groups
 
-Use endpoint groups for shared defaults and mounting:
+Use endpoint groups for shared defaults, then mount them on httpapi's default
+mux:
 
 ```go
 group := endpoint.EndpointGroup{
@@ -319,11 +324,83 @@ group := endpoint.EndpointGroup{
 
 group.RequireAuthorization(endpoint.AuthorizationKindBearer)
 group.AvailableTo(PublicAPI, Dashboard)
-group.Mount(mux)
+
+mux := endpoint.NewMux()
+mux.MustMount(group)
+
+srv := server.New(server.Config{
+	Mux: mux,
+})
+srv.ListenAndServe()
 ```
+
+`endpoint.Mux` implements `http.Handler`, wraps Go's standard `http.ServeMux`,
+keeps a mounted endpoint registry for documentation and operational tooling, and
+rejects duplicate method/path registrations before mutating the mux.
+
+When an application already owns a standard library mux, pass it in and still
+use httpapi's mounting semantics:
+
+```go
+stdlibMux := http.NewServeMux()
+apiMux := endpoint.NewMux(endpoint.WithServeMux(stdlibMux))
+apiMux.MustMount(group)
+```
+
+Use `Mount(...) error` when startup code wants explicit error handling, and
+`MustMount(...)` when a bad route definition should fail fast during boot.
 
 Group availability narrows endpoint availability; it does not widen a restricted
 endpoint. An unrestricted group or endpoint is available to all callers.
+
+## Server
+
+The `server` package is the default way to turn a mux into an `http.Server`:
+
+```go
+mux := endpoint.NewMux()
+mux.MustMount(group)
+
+srv := server.New(server.Config{
+	Port: "8080",
+	Mux:  mux,
+	CORS: server.PermissiveCORS(),
+	Middleware: []server.Middleware{
+		traceMiddleware,
+		authContextMiddleware,
+	},
+})
+
+srv.ListenAndServe()
+```
+
+Configured CORS runs before the middleware chain, so browser preflight requests
+can complete without entering auth, idempotency, or service middleware. Actual
+requests then enter middleware in declaration order.
+
+Use a custom CORS policy when the API should not be public to every browser
+origin:
+
+```go
+srv := server.New(server.Config{
+	Mux: mux,
+	CORS: &server.CORSConfig{
+		AllowedOrigins: []string{"https://dashboard.example"},
+		AllowedMethods: []string{http.MethodGet, http.MethodPost},
+		AllowedHeaders: []string{"authorization", "content-type"},
+		ExposeHeaders:  []string{"x-request-id"},
+		MaxAge:         10 * time.Minute,
+	},
+})
+```
+
+Use `server.CORS(...)` or `server.CORSMiddleware(...)` in `Middleware` only
+when an application intentionally needs custom ordering.
+
+Applications still own service-specific setup: authentication providers,
+runtime adapters, CORS policy choice, observability exporters, and graceful
+shutdown. Use `server.Config.Handler` only when an application needs a fully
+custom handler tree instead of the `endpoint.Mux` path.
 
 ## Service Wiring
 

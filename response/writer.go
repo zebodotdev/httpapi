@@ -20,10 +20,6 @@ const (
 	contentTypeHeaderKey = "content-type"
 	xReqIDHeaderKey      = "x-request-id"
 	xReqTimingHeaderKey  = "x-request-timing"
-
-	corsOriginHeaderKey  = "access-control-allow-origin"
-	corsMethodsHeaderKey = "access-control-allow-methods"
-	corsHeadersHeaderKey = "access-control-allow-headers"
 )
 
 var logr = log.New(os.Stdout, "[httpapi/response]: ", log.Flags()|log.Llongfile)
@@ -56,8 +52,8 @@ type WriteResult struct {
 	Streamed bool
 }
 
-// WriteResponse writes a response using httpapi's standard headers, CORS
-// defaults, body encoding, streaming support, and write deadline handling.
+// WriteResponse writes a response using httpapi's standard headers, body
+// encoding, streaming support, and write deadline handling.
 //
 // Endpoint runtimes should pass WriteOptions.Caller so shaped JSON bodies are
 // projected for the active request caller before encoding. Streaming responses
@@ -245,9 +241,6 @@ func writeResponseHeader(
 	if opts.RequestID != "" {
 		rsh.Set(xReqIDHeaderKey, opts.RequestID)
 	}
-	rsh.Set(corsOriginHeaderKey, "*")
-	rsh.Set(corsMethodsHeaderKey, "*")
-	rsh.Set(corsHeadersHeaderKey, "*")
 
 	res.Status = normalizeStatus(res.Status)
 	w.WriteHeader(res.Status)

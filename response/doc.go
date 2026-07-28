@@ -6,8 +6,9 @@
 // NoContent, Redirect, or Stream and pass it to Render, or call convenience
 // helpers such as RenderJSON, RenderErr, RenderNoContent, RenderRedirect, and
 // RenderStream. Endpoint runtimes call WriteResponse after the handler returns
-// so standard headers, timing, request IDs, CORS defaults, streaming, raw bytes,
-// and write deadlines are applied consistently.
+// so standard headers, timing, request IDs, streaming, raw bytes, and write
+// deadlines are applied consistently. CORS belongs at the server middleware
+// boundary, not in response writing.
 //
 // JSON object responses can also declare a response shape. A response shape is
 // a projection contract: handlers still return normal Go values, while the

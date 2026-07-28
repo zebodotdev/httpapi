@@ -49,6 +49,26 @@ func TestWriteResponseWritesJSONResponse(t *testing.T) {
 	}
 }
 
+func TestWriteResponseDoesNotWriteCORSDefaults(t *testing.T) {
+	res := JSON(http.StatusOK, map[string]bool{"ok": true})
+	rec := httptest.NewRecorder()
+
+	_, err := WriteResponse(rec, res, WriteOptions{RequestID: "req_123"})
+
+	if err != nil {
+		t.Fatalf("WriteResponse error = %v", err)
+	}
+	for _, name := range []string{
+		"Access-Control-Allow-Origin",
+		"Access-Control-Allow-Methods",
+		"Access-Control-Allow-Headers",
+	} {
+		if got := rec.Header().Get(name); got != "" {
+			t.Fatalf("%s = %q, want empty", name, got)
+		}
+	}
+}
+
 func TestWriteResponseWritesPlainTextString(t *testing.T) {
 	res := &Res{
 		ContentType: TextPlain,

@@ -5,8 +5,8 @@
 // definitions and groups, request for safe request parsing and authentication
 // attachment, caller for provider-neutral caller labels, param for reusable
 // request-parameter definitions, response for rendering and response writing,
-// auth for provider-neutral auth/session contracts, and openapi/* for spec
-// transcription.
+// auth for provider-neutral auth/session contracts, server for default
+// http.Server wiring, and openapi/* for spec transcription.
 //
 // The root package is intentionally doc-only so external consumers import the
 // narrow package that owns the behavior they need.
@@ -15,5 +15,5 @@
 // authentication and endpoint audit/idempotency adapters at startup, defines
 // endpoint request parsers with param.JSON, defines caller-aware response shapes
 // with response.Object or response.Project, then wires handlers through
-// endpoint.DefineEndpoint.
+// endpoint.DefineEndpoint and serves them with endpoint.Mux and server.New.
 package httpapi
