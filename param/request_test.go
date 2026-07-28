@@ -351,6 +351,27 @@ func TestRequestParseRestrictedParamAllowedForCaller(t *testing.T) {
 	}
 }
 
+func TestRequestParseCanReadCallerFromSource(t *testing.T) {
+	request := JSON[string]().
+		Param(Required("id", String())).
+		Param(Optional("internal_note", String()).AvailableTo(workerCaller)).
+		Parse(func(values Values) (string, error) {
+			note, _ := Get[string](values, "internal_note")
+			return note, nil
+		})
+
+	got, err := request.Parse(
+		`{"id":"rec_123","internal_note":"ready"}`,
+		WithRequestCaller(testCallerSource{caller: workerCaller}),
+	)
+	if err != nil {
+		t.Fatalf("Parse error = %v", err)
+	}
+	if got != "ready" {
+		t.Fatalf("internal note = %q, want ready", got)
+	}
+}
+
 func TestRequestParseNullPolicy(t *testing.T) {
 	request := orderRequestParser()
 
@@ -575,4 +596,12 @@ func parseInitiateOrder(values Values) (orderParams, error) {
 		params.CreatedFrom = &createdFrom
 	}
 	return params, nil
+}
+
+type testCallerSource struct {
+	caller callerpkg.Caller
+}
+
+func (source testCallerSource) RequestCaller() callerpkg.Caller {
+	return source.caller
 }

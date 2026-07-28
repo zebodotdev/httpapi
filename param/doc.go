@@ -1,4 +1,4 @@
-// Package param defines request payload parsers.
+// Package param defines reusable request payload parsers.
 //
 // A parser describes the JSON parameters an endpoint accepts, how null values
 // behave, which caller labels may supply restricted parameters, and how the
@@ -9,14 +9,27 @@
 // unacceptable parameter. There is no separate validation pass for endpoint
 // authors to remember.
 //
-// Use Array for arrays whose items can be decoded directly into a Go type. Use
-// ArrayOf when each array item should be parsed by another Shape, such as an
-// inline Object with its own parameters and rules. Common cleanup parsers such
-// as TrimmedString, TrimmedStringList, NonEmptyTrimmedString, RFC3339Timestamp,
-// OptionalRFC3339Timestamp, and OptionalRFC3339TimestampPointer are provided
-// for the small bits of request cruft endpoints commonly want to normalize
-// before calling domain code. Custom parsers can accept either the raw value or
-// the parameter path plus raw value.
+// Use Required and Optional to describe accepted JSON parameters. Each parameter
+// has a wire shape, optional size or item bounds, a null policy, optional caller
+// availability, and an optional parser. The parser is allowed to change the
+// value type: for example, a string wire value can become a domain ID, and an
+// array of wire structs can become domain line items.
+//
+// Use Object to define inline nested objects. Use Array for arrays whose items
+// can be decoded directly into a Go type. Use ArrayOf when each array item
+// should be parsed by another Shape, such as an inline Object with its own
+// parameters and rules.
+//
+// Common cleanup parsers such as TrimmedString, TrimmedStringList,
+// NonEmptyTrimmedString, RFC3339Timestamp, OptionalRFC3339Timestamp, and
+// OptionalRFC3339TimestampPointer are provided for the small bits of request
+// cruft endpoints commonly want to normalize before calling domain code. Custom
+// parsers can accept either the raw value or the parameter path plus raw value.
+//
+// Availability is intentionally generic: callers are values from the caller
+// package, not service-specific concepts. A restricted parameter sent by an
+// unavailable caller is reported as an unexpected parameter so the API does not
+// reveal hidden parameter names or the caller labels allowed to use them.
 //
 // A typical endpoint parser is defined once at package initialization:
 //
@@ -53,8 +66,9 @@
 //
 // Runtime usage stays direct:
 //
-//	params, err := initiateOrder.Parse(
-//		r.Body,
-//		param.WithCaller(Worker),
-//	)
+//	params, err := initiateOrder.Parse(r.Body, param.WithRequestCaller(r))
+//	if err != nil {
+//		// Convert *param.Error into your service's public error response.
+//		return
+//	}
 package param
