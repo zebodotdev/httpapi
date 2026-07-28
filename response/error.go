@@ -2,16 +2,18 @@ package response
 
 import (
 	"net/http"
-	"time"
 
 	e "github.com/zebodotdev/httpapi/erreur"
 )
 
-// ErrRes is the standard JSON response body for structured httpapi errors.
-type ErrRes struct {
+// ErrorBody is the standard JSON response body for structured httpapi errors.
+type ErrorBody struct {
 	// Err is the structured error returned to the client.
 	Err *e.Error `json:"error"`
 }
+
+// ErrRes is kept as a short compatibility alias for ErrorBody.
+type ErrRes = ErrorBody
 
 // RenderErr sets a structured error response on the target.
 //
@@ -37,19 +39,17 @@ func RenderErr(r Target, err *e.Error) {
 		)
 	}
 
-	r.SetResponse(&Res{
-		ContentType: ApplicationJson,
-		Status:      status,
-		SentAt:      time.Now(),
-		Body: ErrRes{
-			Err: &bodyErr,
-		},
-	})
+	Render(r, JSON(status, ErrorBody{Err: &bodyErr}))
 }
 
 // RenderParamErr converts an ErrInvalidParam into the standard structured
 // error response format and sets it on the target.
 func RenderParamErr(r Target, err *e.ErrInvalidParam) {
+	if err == nil {
+		RenderErr(r, nil)
+		return
+	}
+
 	status := err.Status
 	if status == 0 {
 		status = http.StatusBadRequest

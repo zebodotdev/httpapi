@@ -3,6 +3,7 @@ package response
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,47 @@ func TestWriteResponseStreamsAndClosesBody(t *testing.T) {
 	}
 	if !body.closed {
 		t.Fatal("stream body was not closed")
+	}
+}
+
+func TestWriteResponseWritesNoContentWithoutContentType(t *testing.T) {
+	res := NoContent()
+	rec := httptest.NewRecorder()
+
+	result, err := WriteResponse(rec, res, WriteOptions{RequestID: "req_123"})
+
+	if err != nil {
+		t.Fatalf("WriteResponse error = %v", err)
+	}
+	if result.Status != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", result.Status, http.StatusNoContent)
+	}
+	if result.BytesWritten != 0 {
+		t.Fatalf("bytes written = %d, want 0", result.BytesWritten)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body length = %d, want 0", rec.Body.Len())
+	}
+	if got := rec.Header().Get(contentTypeHeaderKey); got != "" {
+		t.Fatalf("content-type = %q, want empty", got)
+	}
+}
+
+func TestWriteResponseStoresWrittenHeaderSnapshot(t *testing.T) {
+	res := JSON(http.StatusOK, map[string]string{"ok": "true"}, WithHeader("X-Custom", "yes"))
+	rec := httptest.NewRecorder()
+
+	_, err := WriteResponse(rec, res, WriteOptions{RequestID: "req_123"})
+
+	if err != nil {
+		t.Fatalf("WriteResponse error = %v", err)
+	}
+	rec.Header().Set("X-Custom", "changed")
+	if !reflect.DeepEqual(res.Header.Values("X-Custom"), []string{"yes"}) {
+		t.Fatalf("response header snapshot = %#v", res.Header)
+	}
+	if res.Header.Get(xReqIDHeaderKey) != "req_123" {
+		t.Fatalf("request id header = %q", res.Header.Get(xReqIDHeaderKey))
 	}
 }
 

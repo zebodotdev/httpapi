@@ -175,7 +175,7 @@ func requestCaller(r *Req) callerpkg.Caller {
 	if r == nil {
 		return callerpkg.Caller{}
 	}
-	return r.Caller
+	return r.RequestCaller()
 }
 
 func (e Endpoint) accessPolicy() endpointAccessPolicy {

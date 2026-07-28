@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+
+	callerpkg "github.com/zebodotdev/httpapi/caller"
 )
 
 const (
@@ -28,6 +32,9 @@ var logr = log.New(os.Stdout, "[httpapi/response]: ", log.Flags()|log.Llongfile)
 type WriteOptions struct {
 	// RequestID is written as x-request-id.
 	RequestID string
+
+	// Caller is used to project caller-aware response bodies before encoding.
+	Caller callerpkg.Caller
 
 	// Duration is written as x-request-timing.
 	Duration time.Duration
@@ -51,11 +58,18 @@ type WriteResult struct {
 
 // WriteResponse writes a response using httpapi's standard headers, CORS
 // defaults, body encoding, streaming support, and write deadline handling.
+//
+// Endpoint runtimes should pass WriteOptions.Caller so shaped JSON bodies are
+// projected for the active request caller before encoding. Streaming responses
+// are not projected because their bytes are already owned by the application.
 func WriteResponse(
 	w http.ResponseWriter,
 	res *Res,
 	opts WriteOptions,
 ) (WriteResult, error) {
+	if w == nil {
+		return WriteResult{}, fmt.Errorf("httpapi: response writer is required")
+	}
 	if res == nil {
 		return WriteResult{}, fmt.Errorf("httpapi: response is required")
 	}
@@ -64,7 +78,7 @@ func WriteResponse(
 		return WriteResponseStream(w, res, opts)
 	}
 
-	body, err := EncodeResponseBody(res)
+	body, err := EncodeResponseBodyForCaller(res, opts.Caller)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -75,26 +89,66 @@ func WriteResponse(
 // EncodeResponseBody encodes a non-streaming response body.
 //
 // JSON responses are encoded with encoding/json. TextHTML and TextPlain
-// responses use the string body directly when possible.
+// responses use the string body directly when possible. Caller-aware bodies are
+// projected with an undefined caller; use EncodeResponseBodyForCaller when
+// availability matters.
 func EncodeResponseBody(res *Res) ([]byte, error) {
+	return EncodeResponseBodyForCaller(res, callerpkg.Caller{})
+}
+
+// EncodeResponseBodyForCaller encodes a non-streaming response body after
+// projecting caller-aware bodies for caller.
+//
+// This function is used by endpoint response writing and idempotency capture so
+// replay storage records the same caller-visible body that was sent to the
+// client.
+func EncodeResponseBodyForCaller(res *Res, caller callerpkg.Caller) ([]byte, error) {
 	if res == nil {
 		return nil, fmt.Errorf("httpapi: response is required")
 	}
 	if res.BodyReader != nil {
 		return nil, fmt.Errorf("httpapi: streamed response body cannot be buffered")
 	}
-	if res.ContentType == TextHTML || res.ContentType == TextPlain {
-		if body, ok := res.Body.(string); ok {
+	body := res.Body
+	if projected, ok := projectResponseBody(body, caller); ok {
+		body = projected
+	}
+	if body == nil {
+		return nil, nil
+	}
+	mediaType := responseMediaType(res.ContentType)
+	switch body := body.(type) {
+	case json.RawMessage:
+		return append([]byte(nil), body...), nil
+	case []byte:
+		if !isJSONMediaType(mediaType) {
+			return append([]byte(nil), body...), nil
+		}
+	}
+	if strings.HasPrefix(mediaType, "text/") {
+		if body, ok := body.(string); ok {
 			return []byte(body), nil
 		}
 	}
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(res.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
+}
+
+func responseMediaType(contentType string) string {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = strings.Split(contentType, ";")[0]
+	}
+	return strings.ToLower(strings.TrimSpace(mediaType))
+}
+
+func isJSONMediaType(mediaType string) bool {
+	return mediaType == ApplicationJson || strings.HasSuffix(mediaType, "+json")
 }
 
 // WriteResponseBody writes a pre-encoded non-streaming response body.
@@ -107,12 +161,24 @@ func WriteResponseBody(
 	body []byte,
 	opts WriteOptions,
 ) (WriteResult, error) {
+	if w == nil {
+		return WriteResult{}, fmt.Errorf("httpapi: response writer is required")
+	}
+	if res == nil {
+		return WriteResult{}, fmt.Errorf("httpapi: response is required")
+	}
 	writeDeadlineSet := setEndpointWriteDeadline(w, opts.RequestID, opts.WriteTimeout)
 	if writeDeadlineSet {
 		defer clearEndpointWriteDeadline(w, opts.RequestID)
 	}
 
 	writeResponseHeader(w, res, opts)
+	if len(body) == 0 {
+		return WriteResult{
+			Status: res.Status,
+		}, nil
+	}
+
 	written, err := w.Write(body)
 	if written == 0 {
 		written = len(body)
@@ -132,6 +198,15 @@ func WriteResponseStream(
 	res *Res,
 	opts WriteOptions,
 ) (WriteResult, error) {
+	if w == nil {
+		return WriteResult{}, fmt.Errorf("httpapi: response writer is required")
+	}
+	if res == nil {
+		return WriteResult{}, fmt.Errorf("httpapi: response is required")
+	}
+	if res.BodyReader == nil {
+		return WriteResult{}, fmt.Errorf("httpapi: streamed response body is required")
+	}
 	writeDeadlineSet := setEndpointWriteDeadline(w, opts.RequestID, opts.WriteTimeout)
 	if writeDeadlineSet {
 		defer clearEndpointWriteDeadline(w, opts.RequestID)
@@ -161,15 +236,23 @@ func writeResponseHeader(
 		}
 	}
 
-	rsh.Add(contentTypeHeaderKey, res.ContentType)
-	rsh.Add(xReqTimingHeaderKey, opts.Duration.String())
-	rsh.Add(xReqIDHeaderKey, opts.RequestID)
-	rsh.Add(corsOriginHeaderKey, "*")
-	rsh.Add(corsMethodsHeaderKey, "*")
-	rsh.Add(corsHeadersHeaderKey, "*")
+	if res.ContentType != "" {
+		rsh.Set(contentTypeHeaderKey, res.ContentType)
+	}
+	if opts.Duration != 0 {
+		rsh.Set(xReqTimingHeaderKey, opts.Duration.String())
+	}
+	if opts.RequestID != "" {
+		rsh.Set(xReqIDHeaderKey, opts.RequestID)
+	}
+	rsh.Set(corsOriginHeaderKey, "*")
+	rsh.Set(corsMethodsHeaderKey, "*")
+	rsh.Set(corsHeadersHeaderKey, "*")
+
+	res.Status = normalizeStatus(res.Status)
 	w.WriteHeader(res.Status)
 
-	res.Header = rsh
+	res.Header = cloneHeader(rsh)
 }
 
 type endpointDeadlineSetter func(*http.ResponseController, time.Time) error

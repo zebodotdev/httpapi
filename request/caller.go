@@ -8,11 +8,16 @@ import (
 
 type callerContextKey struct{}
 
-// Caller is the provider-neutral request caller label used by endpoint and
-// parameter availability rules.
+// Caller is the provider-neutral request caller label used by endpoint,
+// parameter, and response-attribute availability rules.
 type Caller = callerpkg.Caller
 
 // ContextWithCaller returns a child context carrying caller.
+//
+// Trusted middleware should attach the caller before endpoint handling begins.
+// NewReq reads the value back from the request context and stores it on Req so
+// endpoint access checks, parameter parsing, and response projection all use the
+// same caller value.
 func ContextWithCaller(ctx context.Context, caller Caller) context.Context {
 	if !caller.Defined() {
 		return ctx
@@ -38,4 +43,16 @@ func (r *Req) AttachCaller(caller Caller) {
 		return
 	}
 	r.Caller = caller
+}
+
+// RequestCaller returns the application-defined caller attached to the request.
+//
+// RequestCaller is the small interface shared with param.WithRequestCaller and
+// response rendering. Prefer it over reading Req.Caller directly when another
+// package only needs caller identity.
+func (r *Req) RequestCaller() Caller {
+	if r == nil {
+		return Caller{}
+	}
+	return r.Caller
 }
