@@ -23,6 +23,12 @@
 // availability narrows endpoint availability; it cannot widen an endpoint that
 // was already restricted. Empty caller availability means available to all.
 //
+// Mux is httpapi's preferred serving surface. It implements http.Handler, wraps
+// the standard library ServeMux, mounts endpoint groups with inherited metadata,
+// rejects duplicate method/path pairs before registration, and keeps a mounted
+// endpoint snapshot for docs and operational tooling. Applications that already
+// own a *http.ServeMux can still pass it with WithServeMux.
+//
 // NewEndpoint, NewIdempotentEndpoint, and
 // NewIdempotentEndpointWithScopeResolver exist for compatibility with older
 // integrations. Prefer DefineEndpoint for new code because a named EndpointSpec

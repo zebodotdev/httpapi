@@ -1,10 +1,8 @@
 package endpoint
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 
@@ -205,21 +203,11 @@ func (eg *EndpointGroup) Add(e Endpoint) {
 // as, say, `/endpoint`, in a group with `group` prefix eventually
 // becomes `/group/endpoint`.
 func (eg *EndpointGroup) Mount(mux *http.ServeMux) {
-	for _, g := range eg.Endpoints {
-		g = eg.endpointWithGroupMetadata(g)
-		path, _ := url.JoinPath(eg.PathPrefix, g.pattern)
-		path, _ = url.PathUnescape(path)
-		logr.Printf(
-			"attaching endpoint to multiplexer:"+
-				" method=%s path=%s accepts=%s",
-			g.method, path, joinContentTypes(g.accepts),
-		)
-
-		mux.HandleFunc(
-			fmt.Sprintf("%s %s", g.method, path),
-			g.Handler(),
-		)
+	if mux == nil {
+		panic(ErrNilServeMux)
 	}
+
+	NewMux(WithServeMux(mux)).MustMount(*eg)
 }
 
 // NewEndpoint returns a basic endpoint from positional constructor arguments.
