@@ -461,7 +461,12 @@ func (r *Req) Method() string { return r.Req.Method }
 func (r *Req) Referer() string { return r.Req.Referer() }
 
 // RequestBody returns the buffered request body bytes.
-func (r *Req) RequestBody() []byte { return r.Body }
+func (r *Req) RequestBody() []byte {
+	if r == nil {
+		return nil
+	}
+	return r.Body
+}
 
 // Errored reports whether a structured error has been attached to the request.
 func (r *Req) Errored() bool { return r.Err != nil }

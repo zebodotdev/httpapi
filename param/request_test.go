@@ -1,6 +1,7 @@
 package param
 
 import (
+	"context"
 	"errors"
 	"io"
 	"reflect"
@@ -372,6 +373,38 @@ func TestRequestParseCanReadCallerFromSource(t *testing.T) {
 	}
 }
 
+func TestRequestParseReadsRequestSource(t *testing.T) {
+	ctx := context.WithValue(context.Background(), testContextKey{}, "request-context")
+	source := &testRequestSource{
+		body:   []byte(`{"id":"rec_123","internal_note":"ready"}`),
+		caller: workerCaller,
+		ctx:    ctx,
+	}
+
+	request := JSON[string]().
+		Param(Required("id", String())).
+		Param(Optional("internal_note", String()).AvailableTo(workerCaller)).
+		Parse(func(values Values) (string, error) {
+			if values.Context().Value(testContextKey{}) != "request-context" {
+				t.Fatalf("parse context was not sourced from request")
+			}
+			gotSource, ok := RequestFromValues[*testRequestSource](values)
+			if !ok || gotSource != source {
+				t.Fatalf("request source = %#v, %t", gotSource, ok)
+			}
+			note, _ := Get[string](values, "internal_note")
+			return note, nil
+		})
+
+	got, err := request.Parse(source)
+	if err != nil {
+		t.Fatalf("Parse error = %v", err)
+	}
+	if got != "ready" {
+		t.Fatalf("internal note = %q, want ready", got)
+	}
+}
+
 func TestRequestParseNullPolicy(t *testing.T) {
 	request := orderRequestParser()
 
@@ -604,4 +637,33 @@ type testCallerSource struct {
 
 func (source testCallerSource) RequestCaller() callerpkg.Caller {
 	return source.caller
+}
+
+type testContextKey struct{}
+
+type testRequestSource struct {
+	body   []byte
+	caller callerpkg.Caller
+	ctx    context.Context
+}
+
+func (source *testRequestSource) RequestCaller() callerpkg.Caller {
+	if source == nil {
+		return callerpkg.Caller{}
+	}
+	return source.caller
+}
+
+func (source *testRequestSource) Context() context.Context {
+	if source == nil || source.ctx == nil {
+		return context.Background()
+	}
+	return source.ctx
+}
+
+func (source *testRequestSource) RequestBody() []byte {
+	if source == nil {
+		return nil
+	}
+	return source.body
 }

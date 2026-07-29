@@ -66,7 +66,7 @@
 //
 // Runtime usage stays direct:
 //
-//	params, err := initiateOrder.Parse(r.Body, param.WithRequestCaller(r))
+//	params, err := initiateOrder.Parse(r)
 //	if err != nil {
 //		// Convert *param.Error into your service's public error response.
 //		return

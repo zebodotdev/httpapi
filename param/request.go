@@ -68,13 +68,16 @@ type Request[T any] struct {
 
 // Parse parses input into the request's final domain value.
 //
-// Input may be an io.Reader, []byte, string, map[string]any, or a JSON object
-// decoded by this package.
+// Input may be an httpapi request source, io.Reader, []byte, string,
+// map[string]any, or a JSON object decoded by this package. When input is a
+// request source, Parse reads the buffered request body and automatically
+// carries its caller, context, and request object into Values.
 func (request *Request[T]) Parse(input any, options ...Option) (T, *Error) {
 	if request == nil || request.def == nil {
 		panic("httpapi/param: nil request parser")
 	}
 
+	options = append(requestSourceOptions(input), options...)
 	object, err := decodeInput(input)
 	if err != nil {
 		return zeroValue[T](), err
@@ -92,6 +95,8 @@ func decodeInput(input any) (jsonObject, *Error) {
 		return value, nil
 	case map[string]any:
 		return jsonObject(value), nil
+	case RequestSource:
+		return decodeBytes(value.RequestBody())
 	case []byte:
 		return decodeBytes(value)
 	case string:
@@ -105,6 +110,14 @@ func decodeInput(input any) (jsonObject, *Error) {
 	default:
 		return nil, invalidBodyError(fmt.Errorf("unsupported request body type %T", input))
 	}
+}
+
+func requestSourceOptions(input any) []Option {
+	source, ok := input.(RequestSource)
+	if !ok {
+		return nil
+	}
+	return []Option{WithRequest(source)}
 }
 
 func decodeBytes(body []byte) (jsonObject, *Error) {
