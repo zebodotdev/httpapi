@@ -216,12 +216,24 @@ func TestDefineEndpointContractAccessorsDoNotLeakMutableState(t *testing.T) {
 		Required: true,
 		Body: param.ShapeSpec{
 			Type: param.TypeObject,
+			Discriminator: &param.DiscriminatorSpec{
+				Parameter: "type",
+				Variants: []param.DiscriminatorVariantSpec{
+					{
+						Value: "order",
+						Shape: param.ShapeSpec{Type: param.TypeObject},
+					},
+				},
+			},
 			Parameters: []param.ParameterSpec{
 				{
 					Name:     "order_id",
 					Required: true,
-					Shape:    param.ShapeSpec{Type: param.TypeString},
-					MinSize:  &minSize,
+					Shape: param.ShapeSpec{
+						Type: param.TypeString,
+						Enum: []string{"ord"},
+					},
+					MinSize: &minSize,
 				},
 			},
 			Rules: []param.RuleSpec{
@@ -255,6 +267,9 @@ func TestDefineEndpointContractAccessorsDoNotLeakMutableState(t *testing.T) {
 
 	request.Body.Parameters[0].Name = "mutated"
 	request.Body.Rules[0].Names[0] = "mutated"
+	request.Body.Discriminator.Parameter = "mutated"
+	request.Body.Discriminator.Variants[0].Value = "mutated"
+	request.Body.Parameters[0].Shape.Enum[0] = "mutated"
 	*request.Body.Parameters[0].MinSize = 99
 	responses[0].Description = "mutated"
 	responses[0].Body.Attributes[0].Name = "mutated"
@@ -263,6 +278,9 @@ func TestDefineEndpointContractAccessorsDoNotLeakMutableState(t *testing.T) {
 	gotResponses := endpoint.ResponseContracts()
 	gotRequest.Body.Parameters[0].Name = "mutated"
 	gotRequest.Body.Rules[0].Names[0] = "mutated"
+	gotRequest.Body.Discriminator.Parameter = "mutated"
+	gotRequest.Body.Discriminator.Variants[0].Value = "mutated"
+	gotRequest.Body.Parameters[0].Shape.Enum[0] = "mutated"
 	*gotRequest.Body.Parameters[0].MinSize = 77
 	gotResponses[0].Description = "mutated"
 	gotResponses[0].Body.Attributes[0].Name = "mutated"
@@ -273,6 +291,13 @@ func TestDefineEndpointContractAccessorsDoNotLeakMutableState(t *testing.T) {
 	}
 	if gotRequest.Body.Rules[0].Names[0] != "order_id" {
 		t.Fatalf("request rule leaked mutation: %#v", gotRequest.Body.Rules[0])
+	}
+	if gotRequest.Body.Discriminator.Parameter != "type" ||
+		gotRequest.Body.Discriminator.Variants[0].Value != "order" {
+		t.Fatalf("request discriminator leaked mutation: %#v", gotRequest.Body.Discriminator)
+	}
+	if gotRequest.Body.Parameters[0].Shape.Enum[0] != "ord" {
+		t.Fatalf("request enum leaked mutation: %#v", gotRequest.Body.Parameters[0].Shape.Enum)
 	}
 	if gotRequest.Body.Parameters[0].MinSize == nil ||
 		*gotRequest.Body.Parameters[0].MinSize != 2 {

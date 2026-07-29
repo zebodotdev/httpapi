@@ -65,6 +65,21 @@ type itemArrayParams struct {
 	Items []itemObjectParams
 }
 
+type enumParams struct {
+	Status string
+}
+
+type discriminatedParams struct {
+	Item discriminatedItemParams
+}
+
+type discriminatedItemParams struct {
+	Type         string
+	Name         string
+	Amount       int
+	InternalNote string
+}
+
 func TestRequestParseRequiredAndOptionalParameters(t *testing.T) {
 	request := JSON[requiredOptionalParams]().
 		Param(Required("name", String()).MinSize(2).MaxSize(20)).
@@ -103,6 +118,40 @@ func TestRequestParseRequiredAndOptionalParameters(t *testing.T) {
 	}
 }
 
+func TestRequestParseStringEnum(t *testing.T) {
+	request := JSON[enumParams]().
+		Param(Required("status", Enum("draft", "active"))).
+		Parse(func(values Values) (enumParams, error) {
+			return enumParams{Status: Must[string](values, "status")}, nil
+		})
+
+	got, err := request.Parse(`{"status":"active"}`)
+	if err != nil {
+		t.Fatalf("Parse error = %v", err)
+	}
+	if got.Status != "active" {
+		t.Fatalf("status = %q, want active", got.Status)
+	}
+
+	_, err = request.Parse(`{"status":"archived"}`)
+	if err == nil {
+		t.Fatal("Parse error = nil")
+	}
+	if err.Code != CodeValueNotAllowed || err.Param != "status" {
+		t.Fatalf("error = %#v", err)
+	}
+	if !strings.Contains(err.Message, "`draft` or `active`") ||
+		!strings.Contains(err.Message, `"archived"`) {
+		t.Fatalf("error message = %q", err.Message)
+	}
+
+	spec := request.Describe()
+	status := findParameterSpec(t, spec.Body, "status")
+	if !reflect.DeepEqual(status.Shape.Enum, []string{"draft", "active"}) {
+		t.Fatalf("status enum = %#v", status.Shape.Enum)
+	}
+}
+
 func TestParameterParserCanChangeShapeType(t *testing.T) {
 	request := JSON[parsedCustomerID]().
 		Param(Required("customer_id", String()).
@@ -119,6 +168,130 @@ func TestParameterParserCanChangeShapeType(t *testing.T) {
 	}
 	if got != "cus_123" {
 		t.Fatalf("customer ID = %q", got)
+	}
+}
+
+func TestRequestParseDiscriminatedObject(t *testing.T) {
+	request := discriminatedRequestParser()
+
+	got, err := request.Parse(`{"item":{"type":"product","name":"Book"}}`)
+	if err != nil {
+		t.Fatalf("Parse product error = %v", err)
+	}
+	if got.Item.Type != "product" || got.Item.Name != "Book" {
+		t.Fatalf("product item = %#v", got.Item)
+	}
+
+	got, err = request.Parse(`{"item":{"type":"fee","amount":120}}`)
+	if err != nil {
+		t.Fatalf("Parse fee error = %v", err)
+	}
+	if got.Item.Type != "fee" || got.Item.Amount != 120 {
+		t.Fatalf("fee item = %#v", got.Item)
+	}
+}
+
+func TestRequestParseDiscriminatedObjectRejectsStructuralFailures(t *testing.T) {
+	request := discriminatedRequestParser()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantCode  ErrorCode
+		wantParam string
+	}{
+		{
+			name:      "missing discriminator",
+			body:      `{"item":{"name":"Book"}}`,
+			wantCode:  CodeMissing,
+			wantParam: "item.type",
+		},
+		{
+			name:      "wrong discriminator type",
+			body:      `{"item":{"type":12,"name":"Book"}}`,
+			wantCode:  CodeTypeMismatch,
+			wantParam: "item.type",
+		},
+		{
+			name:      "unknown discriminator",
+			body:      `{"item":{"type":"discount","amount":10}}`,
+			wantCode:  CodeValueNotAllowed,
+			wantParam: "item.type",
+		},
+		{
+			name:      "unknown branch parameter",
+			body:      `{"item":{"type":"product","name":"Book","amount":10}}`,
+			wantCode:  CodeUnexpected,
+			wantParam: "item.amount",
+		},
+		{
+			name:      "branch required parameter",
+			body:      `{"item":{"type":"fee"}}`,
+			wantCode:  CodeMissing,
+			wantParam: "item.amount",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := request.Parse(tc.body)
+			if err == nil {
+				t.Fatal("Parse error = nil")
+			}
+			if err.Code != tc.wantCode || err.Param != tc.wantParam {
+				t.Fatalf("error = %#v, want code=%q param=%q", err, tc.wantCode, tc.wantParam)
+			}
+		})
+	}
+}
+
+func TestRequestParseDiscriminatedObjectPreservesBranchAvailability(t *testing.T) {
+	request := discriminatedRequestParser()
+
+	_, err := request.Parse(
+		`{"item":{"type":"product","name":"Book","internal_note":"staff"}}`,
+		WithCaller(publicCaller),
+	)
+	if err == nil {
+		t.Fatal("Parse error = nil")
+	}
+	if err.Code != CodeUnexpected || err.Param != "item.internal_note" {
+		t.Fatalf("public error = %#v", err)
+	}
+
+	got, err := request.Parse(
+		`{"item":{"type":"product","name":"Book","internal_note":"staff"}}`,
+		WithCaller(workerCaller),
+	)
+	if err != nil {
+		t.Fatalf("worker parse error = %v", err)
+	}
+	if got.Item.InternalNote != "staff" {
+		t.Fatalf("internal note = %q", got.Item.InternalNote)
+	}
+}
+
+func TestRequestDescribeDiscriminatedObject(t *testing.T) {
+	spec := discriminatedRequestParser().Describe()
+	item := findParameterSpec(t, spec.Body, "item")
+	if item.Shape.Discriminator == nil {
+		t.Fatalf("item discriminator missing: %#v", item.Shape)
+	}
+	if item.Shape.Discriminator.Parameter != "type" {
+		t.Fatalf("discriminator parameter = %q", item.Shape.Discriminator.Parameter)
+	}
+	if len(item.Shape.Discriminator.Variants) != 2 {
+		t.Fatalf("variants = %#v", item.Shape.Discriminator.Variants)
+	}
+	if item.Shape.Discriminator.Variants[0].Value != "product" ||
+		item.Shape.Discriminator.Variants[1].Value != "fee" {
+		t.Fatalf("variant values = %#v", item.Shape.Discriminator.Variants)
+	}
+
+	productShape := item.Shape.Discriminator.Variants[0].Shape
+	name := findParameterSpec(t, productShape, "name")
+	if name.Shape.Type != TypeString {
+		t.Fatalf("product name shape = %#v", name.Shape)
 	}
 }
 
@@ -283,10 +456,23 @@ func TestRequestParseArrayOfObjectShape(t *testing.T) {
 	}
 }
 
-func TestRequestParseExactlyOne(t *testing.T) {
+func TestRequestParseRequiredMutuallyExclusiveGroup(t *testing.T) {
 	request := orderRequestParser()
 
 	_, err := request.Parse(`{
+		"line_items": [{"name": "Book"}]
+	}`)
+	if err == nil {
+		t.Fatal("Parse missing customer error = nil")
+	}
+	if err.Code != CodeRequiredChoice {
+		t.Fatalf("missing customer error code = %q", err.Code)
+	}
+	if err.Param != "customer_id|customer_data" {
+		t.Fatalf("missing customer error param = %q", err.Param)
+	}
+
+	_, err = request.Parse(`{
 		"line_items": [{"name": "Book"}],
 		"customer_id": "cus_123",
 		"customer_data": {"name": "Ada", "email_address": "ada@example.com"}
@@ -296,6 +482,31 @@ func TestRequestParseExactlyOne(t *testing.T) {
 	}
 	if err.Code != CodeMutuallyExclusive {
 		t.Fatalf("error code = %q", err.Code)
+	}
+}
+
+func TestRequestDescribeInlineParameterGroups(t *testing.T) {
+	spec := orderRequestParser().Describe()
+
+	customerRule := findRuleSpec(
+		t,
+		spec.Body,
+		"customer_id",
+		"customer_data",
+	)
+	if customerRule.MinPresent != 1 || customerRule.MaxPresent != 1 {
+		t.Fatalf("customer rule = %#v, want exactly one", customerRule)
+	}
+
+	customerData := findParameterSpec(t, spec.Body, "customer_data")
+	contactRule := findRuleSpec(
+		t,
+		customerData.Shape,
+		"email_address",
+		"phone_number",
+	)
+	if contactRule.MinPresent != 1 || contactRule.MaxPresent != 0 {
+		t.Fatalf("contact rule = %#v, want at least one", contactRule)
 	}
 }
 
@@ -563,22 +774,64 @@ func TestParameterDefinitionPanicsForContradictoryBounds(t *testing.T) {
 	}
 }
 
+func discriminatedRequestParser() *Request[discriminatedParams] {
+	return JSON[discriminatedParams]().
+		Param(Required("item",
+			DiscriminatedObject[discriminatedItemParams]("type").
+				Variant("product",
+					Object[discriminatedItemParams]().
+						Param(Required("name", String())).
+						Param(Optional("internal_note", String()).AvailableTo(workerCaller)).
+						Parse(parseDiscriminatedProduct),
+				).
+				Variant("fee",
+					Object[discriminatedItemParams]().
+						Param(Required("amount", Int())).
+						Parse(parseDiscriminatedFee),
+				),
+		)).
+		Parse(func(values Values) (discriminatedParams, error) {
+			return discriminatedParams{
+				Item: Must[discriminatedItemParams](values, "item"),
+			}, nil
+		})
+}
+
+func parseDiscriminatedProduct(values Values) (discriminatedItemParams, error) {
+	note, _ := Get[string](values, "internal_note")
+	return discriminatedItemParams{
+		Type:         "product",
+		Name:         Must[string](values, "name"),
+		InternalNote: note,
+	}, nil
+}
+
+func parseDiscriminatedFee(values Values) (discriminatedItemParams, error) {
+	return discriminatedItemParams{
+		Type:   "fee",
+		Amount: Must[int](values, "amount"),
+	}, nil
+}
+
 func orderRequestParser() *Request[orderParams] {
 	return JSON[orderParams]().
 		Param(Required("line_items", Array[lineItemParams]()).
 			Null(NullRejected).
 			MinItems(1).
 			Parse(parseLineItems)).
-		Param(Optional("customer_id", String()).
-			Parse(parseCustomerID)).
-		Param(Optional("customer_data",
-			Object[customerDataParams]().
-				Param(Required("name", String())).
-				Param(Optional("email_address", String())).
-				Param(Optional("phone_number", String())).
-				AtLeastOne("email_address", "phone_number").
-				Parse(parseCustomerData),
-		)).
+		Param(MutuallyExclusive(
+			Optional("customer_id", String()).
+				Parse(parseCustomerID),
+			Optional("customer_data",
+				Object[customerDataParams]().
+					Param(Required("name", String())).
+					Param(AtLeastOneOf(
+						Optional("email_address", String()),
+						Optional("phone_number", String()),
+					)).
+					Parse(parseCustomerData),
+			),
+		).Required()).
 		Param(Optional("created_from",
 			Object[createdFromParams]().
 				Param(Optional("source", String())).
@@ -586,7 +839,6 @@ func orderRequestParser() *Request[orderParams] {
 		).AvailableTo(workerCaller, dashboardCaller, adminCaller)).
 		Param(Optional("note", Any()).
 			Null(NullAccepted)).
-		ExactlyOne("customer_id", "customer_data").
 		Parse(parseInitiateOrder)
 }
 
@@ -629,6 +881,32 @@ func parseInitiateOrder(values Values) (orderParams, error) {
 		params.CreatedFrom = &createdFrom
 	}
 	return params, nil
+}
+
+func findParameterSpec(t *testing.T, spec ShapeSpec, name string) ParameterSpec {
+	t.Helper()
+
+	for _, parameter := range spec.Parameters {
+		if parameter.Name == name {
+			return parameter
+		}
+	}
+
+	t.Fatalf("parameter %q not found in %#v", name, spec.Parameters)
+	return ParameterSpec{}
+}
+
+func findRuleSpec(t *testing.T, spec ShapeSpec, names ...string) RuleSpec {
+	t.Helper()
+
+	for _, rule := range spec.Rules {
+		if reflect.DeepEqual(rule.Names, names) {
+			return rule
+		}
+	}
+
+	t.Fatalf("rule %v not found in %#v", names, spec.Rules)
+	return RuleSpec{}
 }
 
 type testCallerSource struct {

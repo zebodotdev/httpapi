@@ -351,7 +351,7 @@ func parametersForEndpoint(endpoint endpointpkg.Endpoint) []spec.Parameter {
 		return nil
 	}
 
-	schema := internalschema.FromParamShape(contract.Body)
+	schema := internalschema.FromParamShapeSwagger2(contract.Body)
 	return []spec.Parameter{
 		{
 			In:       "body",

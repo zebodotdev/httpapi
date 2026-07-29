@@ -21,8 +21,8 @@ func JSON[T any]() *JSONBuilder[T] {
 	return &JSONBuilder[T]{def: &objectDef[T]{}}
 }
 
-// Param adds an accepted top-level request parameter.
-func (builder *JSONBuilder[T]) Param(parameter AcceptedParam) *JSONBuilder[T] {
+// Param adds an accepted top-level request parameter or parameter group.
+func (builder *JSONBuilder[T]) Param(parameter ParamDefinition) *JSONBuilder[T] {
 	builder.def.addParam(parameter)
 	return builder
 }
@@ -47,7 +47,7 @@ func (builder *JSONBuilder[T]) AtMostOne(names ...string) *JSONBuilder[T] {
 
 // MutuallyExclusive requires the request not to include more than one of names.
 func (builder *JSONBuilder[T]) MutuallyExclusive(names ...string) *JSONBuilder[T] {
-	builder.def.addRule(MutuallyExclusive(names...))
+	builder.def.addRule(AtMostOne(names...))
 	return builder
 }
 

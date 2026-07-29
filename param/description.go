@@ -16,11 +16,18 @@ type ShapeSpec struct {
 	// Type is the JSON type accepted by the shape before custom parsing.
 	Type Type
 
+	// Enum describes allowed string values when Type is TypeString and the
+	// shape is an enum.
+	Enum []string
+
 	// Parameters describes object parameters when Type is TypeObject.
 	Parameters []ParameterSpec
 
 	// Rules describes object-level presence rules when Type is TypeObject.
 	Rules []RuleSpec
+
+	// Discriminator describes object variants selected by one string parameter.
+	Discriminator *DiscriminatorSpec
 
 	// Item describes array items when Type is TypeArray.
 	Item *ShapeSpec
@@ -70,6 +77,26 @@ type RuleSpec struct {
 	MaxPresent int
 }
 
+// DiscriminatorSpec describes object variants selected by a discriminator
+// parameter.
+type DiscriminatorSpec struct {
+	// Parameter is the JSON key that selects the object variant.
+	Parameter string
+
+	// Variants is the ordered set of accepted discriminator values and shapes.
+	Variants []DiscriminatorVariantSpec
+}
+
+// DiscriminatorVariantSpec describes one discriminated object branch.
+type DiscriminatorVariantSpec struct {
+	// Value is the discriminator string value that selects this variant.
+	Value string
+
+	// Shape describes the accepted object shape after the discriminator
+	// parameter has been consumed.
+	Shape ShapeSpec
+}
+
 // Describe returns the transcribable description of request.
 func Describe[T any](request *Request[T]) RequestSpec {
 	if request == nil || request.def == nil {
@@ -110,4 +137,13 @@ func cloneInt64Pointer(value *int64) *int64 {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
 }

@@ -103,18 +103,51 @@ var createTaskRequest = param.JSON[createTaskParams]().
 	Param(param.Optional("tag_names", param.Array[string]()).
 		MaxItems(20).
 		Parse(param.TrimmedStringList)).
-	Param(param.Optional("assignee_id", param.String()).
-		Parse(parseTaskAssigneeID)).
-	Param(param.Optional("automation",
-		param.Object[automationParams]().
-			Param(param.Required("name", param.String()).
-				Parse(param.NonEmptyTrimmedString)).
-			Param(param.Optional("run_at", param.String()).
-				Parse(param.OptionalRFC3339TimestampPointer)).
-			Parse(parseAutomation),
-	).AvailableTo(Worker)).
-	AtMostOne("assignee_id", "automation").
+	Param(param.MutuallyExclusive(
+		param.Optional("assignee_id", param.String()).
+			Parse(parseTaskAssigneeID),
+		param.Optional("automation",
+			param.Object[automationParams]().
+				Param(param.Required("name", param.String()).
+					Parse(param.NonEmptyTrimmedString)).
+				Param(param.Optional("run_at", param.String()).
+					Parse(param.OptionalRFC3339TimestampPointer)).
+				Parse(parseAutomation),
+		).AvailableTo(Worker),
+	)).
 	Parse(parseCreateTask)
+```
+
+Use grouped declarations such as `param.MutuallyExclusive(...)` when a set of
+optional parameters owns a presence rule. The group is passed to `Param`, so the
+accepted parameters and their relationship stay together in the request shape.
+Call `.Required()` on a mutually-exclusive group when exactly one of the grouped
+parameters must be present.
+
+Use `param.Enum(...)` for string parameters with fixed allowed values. Enum
+membership is checked before custom parsers run, and the allowed values are
+included in request metadata for transcription:
+
+```go
+Param(param.Required("status", param.Enum("draft", "active", "archived")))
+```
+
+Use `param.DiscriminatedObject(...)` when a string parameter selects the object
+shape to parse. Variant object shapes omit the discriminator parameter because
+the helper consumes it before parsing the selected branch:
+
+```go
+var lineItemShape = param.DiscriminatedObject[lineItemParams]("type").
+	Variant("product",
+		param.Object[lineItemParams]().
+			Param(param.Required("product_id", param.String())).
+			Parse(parseProductLineItem),
+	).
+	Variant("fee",
+		param.Object[lineItemParams]().
+			Param(param.Required("amount", param.Int())).
+			Parse(parseFeeLineItem),
+	)
 ```
 
 Inside the final parser, use `param.Must` for required parameters and

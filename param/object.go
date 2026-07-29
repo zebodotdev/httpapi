@@ -19,8 +19,8 @@ func Object[T any]() *ObjectShape[T] {
 	return &ObjectShape[T]{def: &objectDef[T]{}}
 }
 
-// Param adds an accepted parameter to this object shape.
-func (shape *ObjectShape[T]) Param(parameter AcceptedParam) *ObjectShape[T] {
+// Param adds an accepted parameter or parameter group to this object shape.
+func (shape *ObjectShape[T]) Param(parameter ParamDefinition) *ObjectShape[T] {
 	shape.def.addParam(parameter)
 	return shape
 }
@@ -45,7 +45,7 @@ func (shape *ObjectShape[T]) AtMostOne(names ...string) *ObjectShape[T] {
 
 // MutuallyExclusive requires this object not to include more than one of names.
 func (shape *ObjectShape[T]) MutuallyExclusive(names ...string) *ObjectShape[T] {
-	shape.def.addRule(MutuallyExclusive(names...))
+	shape.def.addRule(AtMostOne(names...))
 	return shape
 }
 
@@ -88,7 +88,14 @@ type objectDef[T any] struct {
 	names  map[string]AcceptedParam
 }
 
-func (def *objectDef[T]) addParam(parameter AcceptedParam) {
+func (def *objectDef[T]) addParam(parameter ParamDefinition) {
+	if parameter == nil {
+		panic("httpapi/param: parameter is required")
+	}
+	parameter.addToParamSet(def)
+}
+
+func (def *objectDef[T]) addAcceptedParam(parameter AcceptedParam) {
 	if parameter == nil {
 		panic("httpapi/param: parameter is required")
 	}

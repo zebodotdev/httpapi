@@ -8,17 +8,32 @@ import (
 	callerpkg "github.com/zebodotdev/httpapi/caller"
 )
 
-// AcceptedParam is a request parameter that can be added to a JSON request or
-// object shape with Param.
+// ParamDefinition is a parameter or parameter group declaration that can be
+// added to a JSON request or object shape with Param.
+//
+// Values are normally created with Required or Optional. Parameter groups such
+// as MutuallyExclusive can also be added anywhere Param accepts a
+// ParamDefinition.
+type ParamDefinition interface {
+	addToParamSet(paramSet)
+}
+
+// AcceptedParam is one accepted request parameter.
 //
 // Values are normally created with Required or Optional.
 type AcceptedParam interface {
+	ParamDefinition
 	paramName() string
 	paramAvailable(callerpkg.Caller) bool
 	paramPresent(any) bool
 	parseParameter(parseContext, string, jsonObject) (parsedParam, *Error)
 	parameterSpec() ParameterSpec
 	wireType() Type
+}
+
+type paramSet interface {
+	addAcceptedParam(AcceptedParam)
+	addRule(rule)
 }
 
 // Parameter describes one accepted request parameter.
@@ -136,6 +151,13 @@ func (parameter *Parameter[T]) Parse(parser any) *Parameter[T] {
 	}
 	parameter.parser = buildParameterParser[T](parser)
 	return parameter
+}
+
+func (parameter *Parameter[T]) addToParamSet(set paramSet) {
+	if parameter == nil {
+		panic("httpapi/param: parameter is required")
+	}
+	set.addAcceptedParam(parameter)
 }
 
 func (parameter *Parameter[T]) paramName() string {

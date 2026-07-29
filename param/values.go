@@ -60,3 +60,15 @@ func Must[T any](values Values, name string) T {
 	}
 	return value
 }
+
+// PtrIfPresent returns a pointer to value when name was supplied and accepted
+// as present.
+//
+// This is useful when parsing optional parameters into domain structs that use
+// pointer fields to distinguish "omitted" from the type's zero value.
+func PtrIfPresent[T any](values Values, name string, value T) *T {
+	if !values.Present(name) {
+		return nil
+	}
+	return &value
+}

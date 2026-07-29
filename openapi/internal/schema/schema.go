@@ -10,12 +10,49 @@ import (
 // schema.
 func FromParamShape(shape parampkg.ShapeSpec) spec.Schema {
 	schema := paramTypeSchema(shape.Type)
+	if len(shape.Enum) > 0 {
+		schema.Enum = cloneStringSlice(shape.Enum)
+	}
 	switch shape.Type {
 	case parampkg.TypeObject:
-		schema.Properties = paramProperties(shape.Parameters)
-		schema.Required = paramRequired(shape.Parameters)
+		if shape.Discriminator != nil {
+			schema.OneOf = discriminatorOneOf(shape.Discriminator, FromParamShape)
+			schema.Discriminator = &spec.Discriminator{
+				PropertyName: shape.Discriminator.Parameter,
+			}
+		} else {
+			schema.Properties = paramProperties(shape.Parameters)
+			schema.Required = paramRequired(shape.Parameters)
+		}
 	case parampkg.TypeArray:
 		schema.Items = paramItemSchema(shape.Item)
+	}
+	return schema
+}
+
+// FromParamShapeSwagger2 translates a param shape into the Swagger 2.0 subset
+// used by gateway documents.
+//
+// Swagger 2.0 cannot express oneOf. Discriminated objects are therefore
+// downgraded into a legal object schema containing the discriminator enum plus
+// the union of variant properties. Runtime parsing still enforces the exact
+// branch contract.
+func FromParamShapeSwagger2(shape parampkg.ShapeSpec) spec.Schema {
+	schema := paramTypeSchema(shape.Type)
+	if len(shape.Enum) > 0 {
+		schema.Enum = cloneStringSlice(shape.Enum)
+	}
+	switch shape.Type {
+	case parampkg.TypeObject:
+		if shape.Discriminator != nil {
+			schema.Properties = discriminatorSwaggerProperties(shape.Discriminator)
+			schema.Required = []string{shape.Discriminator.Parameter}
+		} else {
+			schema.Properties = paramPropertiesWith(shape.Parameters, FromParamShapeSwagger2)
+			schema.Required = paramRequired(shape.Parameters)
+		}
+	case parampkg.TypeArray:
+		schema.Items = paramItemSchemaWith(shape.Item, FromParamShapeSwagger2)
 	}
 	return schema
 }
@@ -78,13 +115,20 @@ func responseTypeSchema(typ responsepkg.Type) spec.Schema {
 }
 
 func paramProperties(parameters []parampkg.ParameterSpec) map[string]spec.Schema {
+	return paramPropertiesWith(parameters, FromParamShape)
+}
+
+func paramPropertiesWith(
+	parameters []parampkg.ParameterSpec,
+	convert func(parampkg.ShapeSpec) spec.Schema,
+) map[string]spec.Schema {
 	if len(parameters) == 0 {
 		return nil
 	}
 
 	properties := make(map[string]spec.Schema, len(parameters))
 	for _, parameter := range parameters {
-		properties[parameter.Name] = FromParamShape(parameter.Shape)
+		properties[parameter.Name] = convert(parameter.Shape)
 	}
 	return properties
 }
@@ -103,12 +147,80 @@ func paramRequired(parameters []parampkg.ParameterSpec) []string {
 }
 
 func paramItemSchema(shape *parampkg.ShapeSpec) *spec.Schema {
+	return paramItemSchemaWith(shape, FromParamShape)
+}
+
+func paramItemSchemaWith(
+	shape *parampkg.ShapeSpec,
+	convert func(parampkg.ShapeSpec) spec.Schema,
+) *spec.Schema {
 	if shape == nil {
 		schema := spec.Schema{}
 		return &schema
 	}
-	schema := FromParamShape(*shape)
+	schema := convert(*shape)
 	return &schema
+}
+
+func discriminatorOneOf(
+	discriminator *parampkg.DiscriminatorSpec,
+	convert func(parampkg.ShapeSpec) spec.Schema,
+) []spec.Schema {
+	if discriminator == nil || discriminator.Parameter == "" || len(discriminator.Variants) == 0 {
+		return nil
+	}
+
+	branches := make([]spec.Schema, 0, len(discriminator.Variants))
+	for _, variant := range discriminator.Variants {
+		branch := convert(variant.Shape)
+		if branch.Type == "" {
+			branch.Type = "object"
+		}
+		if branch.Properties == nil {
+			branch.Properties = map[string]spec.Schema{}
+		}
+		branch.Properties[discriminator.Parameter] = spec.Schema{
+			Type: "string",
+			Enum: []string{variant.Value},
+		}
+		branch.Required = appendUniqueString(branch.Required, discriminator.Parameter)
+		branches = append(branches, branch)
+	}
+	return branches
+}
+
+func discriminatorSwaggerProperties(discriminator *parampkg.DiscriminatorSpec) map[string]spec.Schema {
+	if discriminator == nil || discriminator.Parameter == "" {
+		return nil
+	}
+
+	properties := map[string]spec.Schema{
+		discriminator.Parameter: {
+			Type: "string",
+			Enum: discriminatorValues(discriminator),
+		},
+	}
+	for _, variant := range discriminator.Variants {
+		shape := FromParamShapeSwagger2(variant.Shape)
+		for name, property := range shape.Properties {
+			if name == discriminator.Parameter {
+				continue
+			}
+			if _, ok := properties[name]; ok {
+				continue
+			}
+			properties[name] = property
+		}
+	}
+	return properties
+}
+
+func discriminatorValues(discriminator *parampkg.DiscriminatorSpec) []string {
+	values := make([]string, 0, len(discriminator.Variants))
+	for _, variant := range discriminator.Variants {
+		values = append(values, variant.Value)
+	}
+	return values
 }
 
 func responseProperties(attributes []responsepkg.AttributeSpec) map[string]spec.Schema {
@@ -143,4 +255,22 @@ func responseItemSchema(shape *responsepkg.ShapeSpec) *spec.Schema {
 	}
 	schema := FromResponseShape(*shape)
 	return &schema
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
+}
+
+func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }

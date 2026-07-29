@@ -123,8 +123,10 @@ func cloneResponseContracts(contracts []ResponseContract) []ResponseContract {
 
 func cloneParamShapeSpec(spec parampkg.ShapeSpec) parampkg.ShapeSpec {
 	cloned := parampkg.ShapeSpec{
-		Type: spec.Type,
-		Item: cloneParamShapeSpecPointer(spec.Item),
+		Type:          spec.Type,
+		Enum:          cloneStringSlice(spec.Enum),
+		Discriminator: cloneParamDiscriminatorSpec(spec.Discriminator),
+		Item:          cloneParamShapeSpecPointer(spec.Item),
 	}
 	if len(spec.Parameters) > 0 {
 		cloned.Parameters = make([]parampkg.ParameterSpec, 0, len(spec.Parameters))
@@ -136,6 +138,27 @@ func cloneParamShapeSpec(spec parampkg.ShapeSpec) parampkg.ShapeSpec {
 		cloned.Rules = make([]parampkg.RuleSpec, 0, len(spec.Rules))
 		for _, rule := range spec.Rules {
 			cloned.Rules = append(cloned.Rules, cloneParamRuleSpec(rule))
+		}
+	}
+	return cloned
+}
+
+func cloneParamDiscriminatorSpec(
+	spec *parampkg.DiscriminatorSpec,
+) *parampkg.DiscriminatorSpec {
+	if spec == nil {
+		return nil
+	}
+	cloned := &parampkg.DiscriminatorSpec{
+		Parameter: spec.Parameter,
+	}
+	if len(spec.Variants) > 0 {
+		cloned.Variants = make([]parampkg.DiscriminatorVariantSpec, 0, len(spec.Variants))
+		for _, variant := range spec.Variants {
+			cloned.Variants = append(cloned.Variants, parampkg.DiscriminatorVariantSpec{
+				Value: variant.Value,
+				Shape: cloneParamShapeSpec(variant.Shape),
+			})
 		}
 	}
 	return cloned
@@ -210,4 +233,13 @@ func cloneInt64Pointer(value *int64) *int64 {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
 }

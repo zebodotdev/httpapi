@@ -15,10 +15,24 @@
 // value type: for example, a string wire value can become a domain ID, and an
 // array of wire structs can become domain line items.
 //
+// Use MutuallyExclusive or AtLeastOneOf when parameters should be declared
+// together with their presence rule. The group can be passed to Param anywhere a
+// single parameter can be passed. MutuallyExclusive is optional by default; call
+// Required when exactly one of the grouped parameters must be present.
+//
+// Use Enum for string parameters with fixed allowed values. The enum check runs
+// before custom parsers so endpoint code does not need to re-check membership,
+// and Describe exposes the allowed values for transcription.
+//
 // Use Object to define inline nested objects. Use Array for arrays whose items
 // can be decoded directly into a Go type. Use ArrayOf when each array item
 // should be parsed by another Shape, such as an inline Object with its own
 // parameters and rules.
+//
+// Use DiscriminatedObject for JSON objects where one string parameter selects
+// the accepted object shape. Variant shapes should omit the discriminator
+// parameter; it is parsed, validated, and stripped before the selected variant
+// object parser runs.
 //
 // Common cleanup parsers such as TrimmedString, TrimmedStringList,
 // NonEmptyTrimmedString, RFC3339Timestamp, OptionalRFC3339Timestamp, and
@@ -39,21 +53,36 @@
 //		Admin     = caller.Define("admin")
 //	)
 //
+//	var lineItem = param.DiscriminatedObject[lineItemParams]("type").
+//		Variant("product",
+//			param.Object[lineItemParams]().
+//				Param(param.Required("product_id", param.String())).
+//				Parse(parseProductLineItem),
+//		).
+//		Variant("fee",
+//			param.Object[lineItemParams]().
+//				Param(param.Required("amount", param.Int())).
+//				Parse(parseFeeLineItem),
+//		)
+//
 //	var initiateOrder = param.JSON[createOrderParams]().
-//		Param(param.Required("line_items", param.Array[lineItemParams]()).
+//		Param(param.Required("line_items", param.ArrayOf(lineItem)).
 //			Null(param.NullRejected).
-//			MinItems(1).
-//			Parse(parseLineItems)).
-//		Param(param.Optional("customer_id", param.String()).
-//			Parse(parseCustomerID)).
-//		Param(param.Optional("customer_data",
-//			param.Object[customerDataParams]().
-//				Param(param.Required("name", param.String())).
-//				Param(param.Optional("email_address", param.String())).
-//				Param(param.Optional("phone_number", param.String())).
-//				AtLeastOne("email_address", "phone_number").
-//				Parse(parseCustomerData),
-//		)).
+//			MinItems(1)).
+//		Param(param.Required("mode", param.Enum("payment", "subscription"))).
+//		Param(param.MutuallyExclusive(
+//			param.Optional("customer_id", param.String()).
+//				Parse(parseCustomerID),
+//			param.Optional("customer_data",
+//				param.Object[customerDataParams]().
+//					Param(param.Required("name", param.String())).
+//					Param(param.AtLeastOneOf(
+//						param.Optional("email_address", param.String()),
+//						param.Optional("phone_number", param.String()),
+//					)).
+//					Parse(parseCustomerData),
+//			),
+//		).Required()).
 //		Param(param.Optional("created_from",
 //			param.Object[createdFromParams]().
 //				Param(param.Optional("source", param.String())).
@@ -61,7 +90,6 @@
 //				Param(param.Optional("resource_id", param.String())).
 //				Parse(parseCreatedFrom),
 //		).AvailableTo(Worker, Dashboard, Admin)).
-//		ExactlyOne("customer_id", "customer_data").
 //		Parse(parseInitiateOrder)
 //
 // Runtime usage stays direct:

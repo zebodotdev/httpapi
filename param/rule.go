@@ -33,11 +33,6 @@ func AtMostOne(names ...string) presenceRule {
 	return presenceRule{paramNames: names, maxPresent: 1}
 }
 
-// MutuallyExclusive is an alias for AtMostOne.
-func MutuallyExclusive(names ...string) presenceRule {
-	return AtMostOne(names...)
-}
-
 func (rule presenceRule) apply(values Values) *Error {
 	visible := rule.visibleNames(values)
 	if len(visible) == 0 {

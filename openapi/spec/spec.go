@@ -255,6 +255,19 @@ type Schema struct {
 	// Format is the optional OpenAPI format.
 	Format string `json:"format,omitempty" yaml:"format,omitempty"`
 
+	// Enum describes the allowed literal values for this schema.
+	Enum []string `json:"enum,omitempty" yaml:"enum,omitempty"`
+
+	// OneOf describes alternative schemas accepted at this position. OpenAPI
+	// 3.x transcribers use it for discriminated request objects. Swagger 2.0
+	// transcribers should downgrade these alternatives before emitting a
+	// gateway document because Swagger 2.0 has no oneOf keyword.
+	OneOf []Schema `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
+
+	// Discriminator identifies the property that selects one schema from OneOf.
+	// It is primarily used by OpenAPI 3.x documents.
+	Discriminator *Discriminator `json:"discriminator,omitempty" yaml:"discriminator,omitempty"`
+
 	// Properties describes object properties.
 	Properties map[string]Schema `json:"properties,omitempty" yaml:"properties,omitempty"`
 
@@ -263,6 +276,16 @@ type Schema struct {
 
 	// Items describes array items.
 	Items *Schema `json:"items,omitempty" yaml:"items,omitempty"`
+}
+
+// Discriminator is the OpenAPI 3 discriminator object.
+type Discriminator struct {
+	// PropertyName is the object property that selects the schema variant.
+	PropertyName string `json:"propertyName" yaml:"propertyName"`
+
+	// Mapping optionally maps discriminator values to schema references. The
+	// current httpapi transcribers leave inline schemas unmapped.
+	Mapping map[string]string `json:"mapping,omitempty" yaml:"mapping,omitempty"`
 }
 
 // Extensions contains OpenAPI Specification Extensions for an object.

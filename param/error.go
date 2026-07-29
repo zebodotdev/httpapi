@@ -38,6 +38,10 @@ const (
 	// wire shape.
 	CodeTypeMismatch ErrorCode = "request_parameter_type_mismatch"
 
+	// CodeValueNotAllowed reports that a parameter value is outside the
+	// declared boundary choices, such as a string enum or discriminator value.
+	CodeValueNotAllowed ErrorCode = "request_parameter_value_not_allowed"
+
 	// CodeTooSmall reports that the measured parameter size is below its lower
 	// bound.
 	CodeTooSmall ErrorCode = "request_parameter_too_small"
