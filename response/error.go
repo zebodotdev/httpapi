@@ -15,6 +15,38 @@ type ErrorBody struct {
 // ErrRes is kept as a short compatibility alias for ErrorBody.
 type ErrRes = ErrorBody
 
+// ErrorShape describes the standard structured httpapi error response body.
+var ErrorShape = Object[ErrorBody](
+	Required("error", ErrorObjectShape, func(body ErrorBody) *e.Error {
+		return body.Err
+	}),
+)
+
+// ErrorObjectShape describes the structured error object under ErrorBody.Err.
+var ErrorObjectShape = Object[*e.Error](
+	Optional("message", String(), func(err *e.Error) (string, bool) {
+		return errorString(err, func(err *e.Error) string { return err.Message })
+	}),
+	Optional("fix_code", String(), func(err *e.Error) (string, bool) {
+		return errorString(err, func(err *e.Error) string { return err.FixCode })
+	}),
+	Optional("detail", String(), func(err *e.Error) (string, bool) {
+		return errorString(err, func(err *e.Error) string { return err.Detail })
+	}),
+	Optional("cause", String(), func(err *e.Error) (string, bool) {
+		return errorString(err, func(err *e.Error) string { return err.Cause })
+	}),
+	Required("type", String(), func(err *e.Error) string {
+		return requiredErrorString(err, func(err *e.Error) string { return err.Type })
+	}),
+	Required("code", String(), func(err *e.Error) string {
+		return requiredErrorString(err, func(err *e.Error) string { return err.Code })
+	}),
+	Required("url", String(), func(err *e.Error) string {
+		return requiredErrorString(err, func(err *e.Error) string { return err.URL })
+	}),
+)
+
 // RenderErr sets a structured error response on the target.
 //
 // The response status is derived from the error. When the error has no URL,
@@ -80,4 +112,16 @@ func RenderParamErr(r Target, err *e.ErrInvalidParam) {
 		Code:    code,
 		URL:     e.URLFor(code, typ, cause, fixCode),
 	})
+}
+
+func errorString(err *e.Error, getter func(*e.Error) string) (string, bool) {
+	value := requiredErrorString(err, getter)
+	return value, value != ""
+}
+
+func requiredErrorString(err *e.Error, getter func(*e.Error) string) string {
+	if err == nil || getter == nil {
+		return ""
+	}
+	return getter(err)
 }

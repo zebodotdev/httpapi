@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"testing"
 
+	callerpkg "github.com/zebodotdev/httpapi/caller"
 	e "github.com/zebodotdev/httpapi/erreur"
 )
 
@@ -72,5 +73,27 @@ func TestRenderErrDefaultsNilToUnexpected(t *testing.T) {
 	}
 	if body.Err.Code != "request_failed" {
 		t.Fatalf("code = %q, want request_failed", body.Err.Code)
+	}
+}
+
+func TestErrorShapeDescribesAndProjectsStandardErrorBody(t *testing.T) {
+	spec := Describe(ErrorShape)
+	if spec.Type != TypeObject || len(spec.Attributes) != 1 {
+		t.Fatalf("error shape spec = %#v", spec)
+	}
+	if spec.Attributes[0].Name != "error" || !spec.Attributes[0].Required {
+		t.Fatalf("error attribute = %#v", spec.Attributes[0])
+	}
+
+	body := ErrorShape.ProjectForCaller(ErrorBody{Err: e.InvalidRequestBody()}, callerpkg.Caller{})
+	errObject, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("projected error = %#v", body["error"])
+	}
+	if errObject["code"] != "invalid_request_body" {
+		t.Fatalf("code = %#v", errObject["code"])
+	}
+	if errObject["message"] == nil {
+		t.Fatalf("message missing from projected error: %#v", errObject)
 	}
 }
