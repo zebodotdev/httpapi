@@ -1,10 +1,13 @@
 package endpoint
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	e "github.com/zebodotdev/httpapi/erreur"
+	"github.com/zebodotdev/httpapi/param"
+	"github.com/zebodotdev/httpapi/response"
 )
 
 func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
@@ -151,6 +154,140 @@ func TestDefineEndpointAcceptsMultipleContentTypes(t *testing.T) {
 	}
 }
 
+func TestDefineEndpointStoresContractMetadata(t *testing.T) {
+	request := RequestBody(contractRequestParser())
+	responseContract := ResponseBody(
+		http.StatusCreated,
+		"Created order.",
+		contractResponseShape(),
+	)
+
+	endpoint := DefineEndpoint(EndpointSpec{
+		Method:    POST,
+		Path:      "/orders/new",
+		Handler:   noopTranscriptionHandler,
+		Request:   request,
+		Responses: []ResponseContract{responseContract},
+	})
+
+	gotRequest := endpoint.RequestContract()
+	if !gotRequest.Required {
+		t.Fatal("request contract is not required")
+	}
+	if gotRequest.Body.Type != param.TypeObject {
+		t.Fatalf("request body type = %q, want object", gotRequest.Body.Type)
+	}
+	if len(gotRequest.Body.Parameters) != 2 {
+		t.Fatalf("request parameters = %d, want 2", len(gotRequest.Body.Parameters))
+	}
+	if gotRequest.Body.Parameters[0].Name != "order_id" {
+		t.Fatalf("first request parameter = %q", gotRequest.Body.Parameters[0].Name)
+	}
+	if gotRequest.Body.Parameters[1].Shape.Type != param.TypeArray ||
+		gotRequest.Body.Parameters[1].Shape.Item == nil ||
+		gotRequest.Body.Parameters[1].Shape.Item.Type != param.TypeString {
+		t.Fatalf("tags parameter shape = %#v", gotRequest.Body.Parameters[1].Shape)
+	}
+
+	gotResponses := endpoint.ResponseContracts()
+	if len(gotResponses) != 1 {
+		t.Fatalf("response contracts = %d, want 1", len(gotResponses))
+	}
+	if gotResponses[0].Status != http.StatusCreated {
+		t.Fatalf("response status = %d, want %d", gotResponses[0].Status, http.StatusCreated)
+	}
+	if gotResponses[0].Description != "Created order." {
+		t.Fatalf("response description = %q", gotResponses[0].Description)
+	}
+	if gotResponses[0].ContentType != ApplicationJson {
+		t.Fatalf("response content type = %q, want application/json", gotResponses[0].ContentType)
+	}
+	if gotResponses[0].Body.Type != response.TypeObject {
+		t.Fatalf("response body type = %q, want object", gotResponses[0].Body.Type)
+	}
+	if len(gotResponses[0].Body.Attributes) != 2 {
+		t.Fatalf("response attributes = %d, want 2", len(gotResponses[0].Body.Attributes))
+	}
+}
+
+func TestDefineEndpointContractAccessorsDoNotLeakMutableState(t *testing.T) {
+	minSize := int64(2)
+	request := RequestContract{
+		Required: true,
+		Body: param.ShapeSpec{
+			Type: param.TypeObject,
+			Parameters: []param.ParameterSpec{
+				{
+					Name:     "order_id",
+					Required: true,
+					Shape:    param.ShapeSpec{Type: param.TypeString},
+					MinSize:  &minSize,
+				},
+			},
+			Rules: []param.RuleSpec{
+				{Names: []string{"order_id"}, MinPresent: 1},
+			},
+		},
+	}
+	responses := []ResponseContract{
+		{
+			Status:      http.StatusOK,
+			Description: "Order.",
+			Body: response.ShapeSpec{
+				Type: response.TypeObject,
+				Attributes: []response.AttributeSpec{
+					{
+						Name:     "id",
+						Required: true,
+						Shape:    response.ShapeSpec{Type: response.TypeString},
+					},
+				},
+			},
+		},
+	}
+
+	endpoint := DefineEndpoint(EndpointSpec{
+		Method:    POST,
+		Handler:   noopTranscriptionHandler,
+		Request:   request,
+		Responses: responses,
+	})
+
+	request.Body.Parameters[0].Name = "mutated"
+	request.Body.Rules[0].Names[0] = "mutated"
+	*request.Body.Parameters[0].MinSize = 99
+	responses[0].Description = "mutated"
+	responses[0].Body.Attributes[0].Name = "mutated"
+
+	gotRequest := endpoint.RequestContract()
+	gotResponses := endpoint.ResponseContracts()
+	gotRequest.Body.Parameters[0].Name = "mutated"
+	gotRequest.Body.Rules[0].Names[0] = "mutated"
+	*gotRequest.Body.Parameters[0].MinSize = 77
+	gotResponses[0].Description = "mutated"
+	gotResponses[0].Body.Attributes[0].Name = "mutated"
+
+	gotRequest = endpoint.RequestContract()
+	if gotRequest.Body.Parameters[0].Name != "order_id" {
+		t.Fatalf("request parameter leaked mutation: %#v", gotRequest.Body.Parameters[0])
+	}
+	if gotRequest.Body.Rules[0].Names[0] != "order_id" {
+		t.Fatalf("request rule leaked mutation: %#v", gotRequest.Body.Rules[0])
+	}
+	if gotRequest.Body.Parameters[0].MinSize == nil ||
+		*gotRequest.Body.Parameters[0].MinSize != 2 {
+		t.Fatalf("request min size leaked mutation: %#v", gotRequest.Body.Parameters[0].MinSize)
+	}
+
+	gotResponses = endpoint.ResponseContracts()
+	if gotResponses[0].Description != "Order." {
+		t.Fatalf("response description leaked mutation: %#v", gotResponses[0])
+	}
+	if gotResponses[0].Body.Attributes[0].Name != "id" {
+		t.Fatalf("response attribute leaked mutation: %#v", gotResponses[0].Body.Attributes[0])
+	}
+}
+
 func TestLegacyConstructorsMatchEndpointSpec(t *testing.T) {
 	resolver := func(*Req) (string, *e.ErrInvalidParam) { return "sync", nil }
 	route := RouteSpec{
@@ -223,4 +360,38 @@ func TestDefineEndpointRequiresHandler(t *testing.T) {
 	}()
 
 	DefineEndpoint(EndpointSpec{Method: POST})
+}
+
+type contractRequest struct {
+	OrderID string
+	Tags    []string
+}
+
+type contractResponse struct {
+	ID     string
+	Status string
+}
+
+func contractRequestParser() *param.Request[contractRequest] {
+	return param.JSON[contractRequest]().
+		Param(param.Required("order_id", param.String())).
+		Param(param.Optional("tags", param.ArrayOf(param.String()))).
+		Parse(func(values param.Values) (contractRequest, error) {
+			tags, _ := param.Get[[]string](values, "tags")
+			return contractRequest{
+				OrderID: param.Must[string](values, "order_id"),
+				Tags:    tags,
+			}, nil
+		})
+}
+
+func contractResponseShape() response.Shape[contractResponse] {
+	return response.Object[contractResponse](
+		response.Required("id", response.String(), func(contract contractResponse) string {
+			return contract.ID
+		}),
+		response.Required("status", response.String(), func(contract contractResponse) string {
+			return contract.Status
+		}),
+	)
 }

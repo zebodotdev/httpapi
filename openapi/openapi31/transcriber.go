@@ -7,6 +7,7 @@ import (
 
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	internalroute "github.com/zebodotdev/httpapi/openapi/internal/route"
+	internalschema "github.com/zebodotdev/httpapi/openapi/internal/schema"
 	"github.com/zebodotdev/httpapi/openapi/spec"
 )
 
@@ -44,20 +45,13 @@ type Transcriber struct {
 	// PathPrefix is prepended to every transcribed path.
 	PathPrefix string
 
-	// Title is the generated document title. Empty values use
-	// DefaultDocumentTitle.
-	Title string
+	// Info is the generated OpenAPI info block. Info.Version is required for
+	// document transcription. Empty title and description values use documented
+	// httpapi defaults so quick prototypes still emit valid OpenAPI.
+	Info spec.Info
 
-	// Description is the generated document description. Empty values use
-	// DefaultDocumentDescription.
-	Description string
-
-	// Version is the generated document version and is required for document
-	// transcription.
-	Version string
-
-	// ServerURL is the optional OpenAPI 3 server URL.
-	ServerURL string
+	// Servers lists the public base URLs clients can use for this API.
+	Servers []spec.Server
 }
 
 // TranscribeEndpoint emits public OpenAPI path entries for one endpoint.
@@ -153,7 +147,8 @@ func (t Transcriber) transcribe(routes internalroute.Routes) (spec.Paths, error)
 }
 
 func (t Transcriber) transcribeDocument(routes internalroute.Routes) (spec.Document, error) {
-	if strings.TrimSpace(t.Version) == "" {
+	info := t.documentInfo()
+	if strings.TrimSpace(info.Version) == "" {
 		return spec.Document{}, ErrDocumentVersionRequired
 	}
 
@@ -164,15 +159,9 @@ func (t Transcriber) transcribeDocument(routes internalroute.Routes) (spec.Docum
 
 	doc := spec.Document{
 		OpenAPI: DocumentSpecVersion,
-		Info: spec.Info{
-			Title:       t.documentTitle(),
-			Description: t.documentDescription(),
-			Version:     strings.TrimSpace(t.Version),
-		},
-		Paths: paths,
-	}
-	if serverURL := strings.TrimSpace(t.ServerURL); serverURL != "" {
-		doc.Servers = []spec.Server{{URL: serverURL}}
+		Info:    info,
+		Servers: t.documentServers(),
+		Paths:   paths,
 	}
 
 	return doc, nil
@@ -186,20 +175,20 @@ func (t Transcriber) routes(routes internalroute.Routes) (internalroute.Routes, 
 	return routes.WithPathPrefix(t.PathPrefix)
 }
 
-func (t Transcriber) documentTitle() string {
-	title := strings.TrimSpace(t.Title)
-	if title == "" {
-		return DefaultDocumentTitle
+func (t Transcriber) documentInfo() spec.Info {
+	info := spec.NormalizeInfo(t.Info)
+	if info.Title == "" {
+		info.Title = DefaultDocumentTitle
 	}
-	return title
+	if info.Description == "" {
+		info.Description = DefaultDocumentDescription
+	}
+
+	return info
 }
 
-func (t Transcriber) documentDescription() string {
-	description := strings.TrimSpace(t.Description)
-	if description == "" {
-		return DefaultDocumentDescription
-	}
-	return description
+func (t Transcriber) documentServers() []spec.Server {
+	return spec.NormalizeServers(t.Servers)
 }
 
 func operationForRoute(route internalroute.Route) (spec.Operation, error) {
@@ -207,7 +196,8 @@ func operationForRoute(route internalroute.Route) (spec.Operation, error) {
 	operation := spec.Operation{
 		OperationID: defaultOperationID(route.Method, route.Path),
 		Summary:     fmt.Sprintf("%s %s", route.Method, route.Path),
-		Responses:   placeholderResponses(),
+		RequestBody: requestBodyForEndpoint(route.Endpoint),
+		Responses:   responsesForEndpoint(route.Endpoint),
 	}
 	if routeSpec.OperationID != "" {
 		operation.OperationID = routeSpec.OperationID
@@ -233,6 +223,83 @@ func placeholderResponses() map[string]spec.Response {
 	return map[string]spec.Response{
 		"default": {Description: PlaceholderResponseDescription},
 	}
+}
+
+func requestBodyForEndpoint(endpoint endpointpkg.Endpoint) *spec.RequestBody {
+	contract := endpoint.RequestContract()
+	if contract.Body.Type == "" {
+		return nil
+	}
+
+	schema := internalschema.FromParamShape(contract.Body)
+	return &spec.RequestBody{
+		Required: contract.Required,
+		Content:  mediaTypesForSchema(contentTypesForOpenAPI(endpoint.AcceptedContentTypes()), schema),
+	}
+}
+
+func responsesForEndpoint(endpoint endpointpkg.Endpoint) map[string]spec.Response {
+	contracts := endpoint.ResponseContracts()
+	if len(contracts) == 0 {
+		return placeholderResponses()
+	}
+
+	responses := make(map[string]spec.Response, len(contracts))
+	for _, contract := range contracts {
+		responses[responseStatusCode(contract.Status)] = responseForContract(contract)
+	}
+	return responses
+}
+
+func responseForContract(contract endpointpkg.ResponseContract) spec.Response {
+	response := spec.Response{Description: responseDescription(contract.Description)}
+	if contract.Body.Type != "" {
+		response.Content = mediaTypesForSchema(
+			[]string{responseContentType(contract.ContentType)},
+			internalschema.FromResponseShape(contract.Body),
+		)
+	}
+	return response
+}
+
+func mediaTypesForSchema(contentTypes []string, schema spec.Schema) map[string]spec.MediaType {
+	content := make(map[string]spec.MediaType, len(contentTypes))
+	for _, contentType := range contentTypes {
+		schemaCopy := schema
+		content[contentType] = spec.MediaType{Schema: &schemaCopy}
+	}
+	return content
+}
+
+func contentTypesForOpenAPI(contentTypes []endpointpkg.ContentType) []string {
+	contentTypes = endpointpkg.NormalizeContentTypeSlice(contentTypes)
+	values := make([]string, 0, len(contentTypes))
+	for _, contentType := range contentTypes {
+		values = append(values, string(contentType))
+	}
+	return values
+}
+
+func responseStatusCode(status int) string {
+	if status == 0 {
+		return "default"
+	}
+	return fmt.Sprintf("%d", status)
+}
+
+func responseDescription(description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return "Response."
+	}
+	return description
+}
+
+func responseContentType(contentType endpointpkg.ContentType) string {
+	if contentType == "" {
+		contentType = endpointpkg.ApplicationJson
+	}
+	return string(endpointpkg.NormalizeContentType(contentType))
 }
 
 func defaultOperationID(method endpointpkg.HttpMethod, path string) string {

@@ -2,10 +2,15 @@ package openapi31
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
+	"github.com/zebodotdev/httpapi/openapi/spec"
+	"github.com/zebodotdev/httpapi/param"
+	"github.com/zebodotdev/httpapi/response"
 )
 
 func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
@@ -78,8 +83,10 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 
 func TestTranscribeDocumentIncludesVersionAndServer(t *testing.T) {
 	doc, err := Transcriber{
-		Version:   "2026-07-18",
-		ServerURL: "https://api.example.com",
+		Info: spec.Info{
+			Version: "2026-07-18",
+		},
+		Servers: []spec.Server{{URL: "https://api.example.com"}},
 	}.TranscribeEndpointDocument(
 		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopOpenAPI31Handler),
 	)
@@ -110,6 +117,52 @@ func TestTranscribeDocumentRequiresVersion(t *testing.T) {
 	}
 }
 
+func TestTranscribeUsesEndpointRequestAndResponseContracts(t *testing.T) {
+	paths, err := Transcriber{}.TranscribeEndpoint(endpointpkg.DefineEndpoint(endpointpkg.EndpointSpec{
+		Method:    endpointpkg.POST,
+		Path:      "/orders/new",
+		Handler:   noopOpenAPI31Handler,
+		Request:   endpointpkg.RequestBody(openAPI31OrderRequestParser()),
+		Responses: []endpointpkg.ResponseContract{endpointpkg.ResponseBody(http.StatusCreated, "Created order.", openAPI31OrderResponseShape())},
+	}))
+	if err != nil {
+		t.Fatalf("TranscribeEndpoint() error = %v", err)
+	}
+
+	operation := paths["/orders/new"].Post
+	if operation == nil {
+		t.Fatal("post operation missing")
+	}
+	if operation.RequestBody == nil {
+		t.Fatal("request body missing")
+	}
+	requestSchema := operation.RequestBody.Content[string(endpointpkg.ApplicationJson)].Schema
+	if requestSchema == nil {
+		t.Fatal("request schema missing")
+	}
+	if requestSchema.Properties["order_id"].Type != "string" {
+		t.Fatalf("order_id schema = %#v", requestSchema.Properties["order_id"])
+	}
+	if len(requestSchema.Required) != 1 || requestSchema.Required[0] != "order_id" {
+		t.Fatalf("request required = %#v", requestSchema.Required)
+	}
+
+	created := operation.Responses["201"]
+	if created.Description != "Created order." {
+		t.Fatalf("created response = %#v", created)
+	}
+	responseSchema := created.Content[string(endpointpkg.ApplicationJson)].Schema
+	if responseSchema == nil {
+		t.Fatal("response schema missing")
+	}
+	if responseSchema.Properties["id"].Type != "string" {
+		t.Fatalf("id response schema = %#v", responseSchema.Properties["id"])
+	}
+	if responseSchema.Properties["created_at"].Format != "date-time" {
+		t.Fatalf("created_at response schema = %#v", responseSchema.Properties["created_at"])
+	}
+}
+
 func TestTranscribeWithPathPrefix(t *testing.T) {
 	group := endpointpkg.EndpointGroup{PathPrefix: "orders"}
 	group.Add(endpointpkg.NewEndpoint(endpointpkg.POST, "", noopOpenAPI31Handler))
@@ -129,3 +182,32 @@ func TestTranscribeWithPathPrefix(t *testing.T) {
 }
 
 func noopOpenAPI31Handler(*endpointpkg.Req) {}
+
+type openAPI31OrderRequest struct {
+	OrderID string
+}
+
+type openAPI31OrderResponse struct {
+	ID string
+}
+
+func openAPI31OrderRequestParser() *param.Request[openAPI31OrderRequest] {
+	return param.JSON[openAPI31OrderRequest]().
+		Param(param.Required("order_id", param.String())).
+		Parse(func(values param.Values) (openAPI31OrderRequest, error) {
+			return openAPI31OrderRequest{
+				OrderID: param.Must[string](values, "order_id"),
+			}, nil
+		})
+}
+
+func openAPI31OrderResponseShape() response.Shape[openAPI31OrderResponse] {
+	return response.Object[openAPI31OrderResponse](
+		response.Required("id", response.String(), func(order openAPI31OrderResponse) string {
+			return order.ID
+		}),
+		response.Required("created_at", response.Time(), func(openAPI31OrderResponse) time.Time {
+			return time.Time{}
+		}),
+	)
+}

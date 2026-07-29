@@ -54,14 +54,97 @@ type Info struct {
 	// Description is optional document-level API context.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
+	// TermsOfService is an optional URL for the API terms of service.
+	TermsOfService string `json:"termsOfService,omitempty" yaml:"termsOfService,omitempty"`
+
+	// Contact identifies the people or organization responsible for the API.
+	Contact *Contact `json:"contact,omitempty" yaml:"contact,omitempty"`
+
+	// License describes the API document license.
+	License *License `json:"license,omitempty" yaml:"license,omitempty"`
+
 	// Version is the service or API version represented by the document.
 	Version string `json:"version" yaml:"version"`
+}
+
+// Contact is the OpenAPI contact object.
+type Contact struct {
+	// Name is the contact display name.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+
+	// URL is the contact information URL.
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+
+	// Email is the contact email address.
+	Email string `json:"email,omitempty" yaml:"email,omitempty"`
+}
+
+// License is the OpenAPI license object.
+type License struct {
+	// Name is the license name.
+	Name string `json:"name" yaml:"name"`
+
+	// URL is the optional URL for the license text.
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 // Server is an OpenAPI 3 server entry.
 type Server struct {
 	// URL is the base URL for the API server.
 	URL string `json:"url" yaml:"url"`
+
+	// Description is optional human-readable context for this server URL.
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+// NormalizeInfo trims optional string fields and drops empty nested objects.
+func NormalizeInfo(info Info) Info {
+	info.Title = strings.TrimSpace(info.Title)
+	info.Description = strings.TrimSpace(info.Description)
+	info.TermsOfService = strings.TrimSpace(info.TermsOfService)
+	info.Version = strings.TrimSpace(info.Version)
+	if info.Contact != nil {
+		contact := *info.Contact
+		contact.Name = strings.TrimSpace(contact.Name)
+		contact.URL = strings.TrimSpace(contact.URL)
+		contact.Email = strings.TrimSpace(contact.Email)
+		if contact.Name == "" && contact.URL == "" && contact.Email == "" {
+			info.Contact = nil
+		} else {
+			info.Contact = &contact
+		}
+	}
+	if info.License != nil {
+		license := *info.License
+		license.Name = strings.TrimSpace(license.Name)
+		license.URL = strings.TrimSpace(license.URL)
+		if license.Name == "" && license.URL == "" {
+			info.License = nil
+		} else {
+			info.License = &license
+		}
+	}
+
+	return info
+}
+
+// NormalizeServers trims server entries and removes entries without a URL.
+func NormalizeServers(servers []Server) []Server {
+	if len(servers) == 0 {
+		return nil
+	}
+
+	normalized := make([]Server, 0, len(servers))
+	for _, server := range servers {
+		server.URL = strings.TrimSpace(server.URL)
+		server.Description = strings.TrimSpace(server.Description)
+		if server.URL == "" {
+			continue
+		}
+		normalized = append(normalized, server)
+	}
+
+	return normalized
 }
 
 // Paths maps OpenAPI path strings to method entries.
@@ -102,6 +185,12 @@ type Operation struct {
 	// Summary is a short human-readable operation summary.
 	Summary string `json:"summary,omitempty" yaml:"summary,omitempty"`
 
+	// RequestBody is the OpenAPI 3 request body for this operation.
+	RequestBody *RequestBody `json:"requestBody,omitempty" yaml:"requestBody,omitempty"`
+
+	// Parameters is the Swagger 2.0 operation parameter list.
+	Parameters []Parameter `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+
 	// Consumes is the Swagger 2.0 list of request media types.
 	Consumes []string `json:"consumes,omitempty" yaml:"consumes,omitempty"`
 
@@ -120,6 +209,60 @@ type Operation struct {
 type Response struct {
 	// Description is the required human-readable response description.
 	Description string `json:"description" yaml:"description"`
+
+	// Content is the OpenAPI 3 response body content map.
+	Content map[string]MediaType `json:"content,omitempty" yaml:"content,omitempty"`
+
+	// Schema is the Swagger 2.0 response body schema.
+	Schema *Schema `json:"schema,omitempty" yaml:"schema,omitempty"`
+}
+
+// RequestBody is the OpenAPI 3 operation request body object.
+type RequestBody struct {
+	// Required reports whether the request body must be present.
+	Required bool `json:"required,omitempty" yaml:"required,omitempty"`
+
+	// Content maps media types to payload descriptions.
+	Content map[string]MediaType `json:"content" yaml:"content"`
+}
+
+// Parameter is a Swagger 2.0 operation parameter.
+type Parameter struct {
+	// In identifies where the parameter is supplied.
+	In string `json:"in" yaml:"in"`
+
+	// Name is the parameter name.
+	Name string `json:"name" yaml:"name"`
+
+	// Required reports whether the parameter must be supplied.
+	Required bool `json:"required,omitempty" yaml:"required,omitempty"`
+
+	// Schema describes body parameters.
+	Schema *Schema `json:"schema,omitempty" yaml:"schema,omitempty"`
+}
+
+// MediaType describes a request or response body for a single media type.
+type MediaType struct {
+	// Schema describes the JSON payload.
+	Schema *Schema `json:"schema,omitempty" yaml:"schema,omitempty"`
+}
+
+// Schema is a minimal provider-neutral OpenAPI schema object.
+type Schema struct {
+	// Type is the JSON Schema/OpenAPI type.
+	Type string `json:"type,omitempty" yaml:"type,omitempty"`
+
+	// Format is the optional OpenAPI format.
+	Format string `json:"format,omitempty" yaml:"format,omitempty"`
+
+	// Properties describes object properties.
+	Properties map[string]Schema `json:"properties,omitempty" yaml:"properties,omitempty"`
+
+	// Required lists required object property names.
+	Required []string `json:"required,omitempty" yaml:"required,omitempty"`
+
+	// Items describes array items.
+	Items *Schema `json:"items,omitempty" yaml:"items,omitempty"`
 }
 
 // Extensions contains OpenAPI Specification Extensions for an object.
@@ -264,6 +407,12 @@ func (operation Operation) object() (map[string]any, error) {
 	}
 	if operation.Summary != "" {
 		object["summary"] = operation.Summary
+	}
+	if operation.RequestBody != nil {
+		object["requestBody"] = operation.RequestBody
+	}
+	if len(operation.Parameters) > 0 {
+		object["parameters"] = operation.Parameters
 	}
 	if len(operation.Consumes) > 0 {
 		object["consumes"] = operation.Consumes

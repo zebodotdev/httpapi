@@ -44,19 +44,21 @@ var logr = log.New(os.Stdout, TAG, log.Flags()|log.Llongfile)
 // Endpoint couples route metadata, access policy, runtime behavior, and the
 // application handler for one HTTP operation.
 type Endpoint struct {
-	accepts    []ContentType
-	method     HttpMethod
-	pattern    string
-	handler    http.HandlerFunc
-	rawHandler Handler
-	idempotent bool
-	resolver   IdempotencyScopeResolver
-	access     endpointAccessPolicy
-	route      RouteSpec
-	priority   endpointPriorityPolicy
-	timeout    endpointTimeoutPolicy
-	limits     endpointLimitsPolicy
-	authKeys   map[string]bool
+	accepts           []ContentType
+	method            HttpMethod
+	pattern           string
+	handler           http.HandlerFunc
+	rawHandler        Handler
+	idempotent        bool
+	resolver          IdempotencyScopeResolver
+	access            endpointAccessPolicy
+	route             RouteSpec
+	priority          endpointPriorityPolicy
+	timeout           endpointTimeoutPolicy
+	limits            endpointLimitsPolicy
+	requestContract   RequestContract
+	responseContracts []ResponseContract
+	authKeys          map[string]bool
 }
 
 // Handler returns the net/http handler built around the application handler.

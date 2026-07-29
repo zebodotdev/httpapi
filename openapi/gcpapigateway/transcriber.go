@@ -8,6 +8,7 @@ import (
 
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	internalroute "github.com/zebodotdev/httpapi/openapi/internal/route"
+	internalschema "github.com/zebodotdev/httpapi/openapi/internal/schema"
 	"github.com/zebodotdev/httpapi/openapi/spec"
 )
 
@@ -81,24 +82,19 @@ type Transcriber struct {
 	// PathPrefix is prepended to every transcribed path.
 	PathPrefix string
 
-	// Title is the generated document title. Empty values use
-	// DefaultDocumentTitle.
-	Title string
-
-	// Description is the generated document description. Empty values use
-	// DefaultDocumentDescription.
-	Description string
-
-	// Version is the generated document version and is required for document
-	// transcription.
-	Version string
+	// Info is the generated Swagger info block. Info.Version is required for
+	// document transcription. Empty title and description values use documented
+	// httpapi defaults so generated gateway documents stay valid during early
+	// integration.
+	Info spec.Info
 
 	// Host is the Swagger 2.0 host value for the API Gateway document.
 	Host string
 
-	// BackendAddress is the default upstream backend address for routes that do
-	// not define RouteSpec.Backend.Address.
-	BackendAddress string
+	// DefaultBackend is the provider-neutral fallback backend for routes that do
+	// not define RouteSpec.Backend fields. This transcriber translates the
+	// resolved backend into GCP API Gateway's x-google-backend extension.
+	DefaultBackend endpointpkg.RouteBackend
 }
 
 // Backend is the GCP API Gateway backend extension payload.
@@ -200,7 +196,8 @@ func (t Transcriber) transcribe(routes internalroute.Routes) (spec.Paths, error)
 }
 
 func (t Transcriber) transcribeDocument(routes internalroute.Routes) (spec.Document, error) {
-	if strings.TrimSpace(t.Version) == "" {
+	info := t.documentInfo()
+	if strings.TrimSpace(info.Version) == "" {
 		return spec.Document{}, ErrDocumentVersionRequired
 	}
 
@@ -210,12 +207,8 @@ func (t Transcriber) transcribeDocument(routes internalroute.Routes) (spec.Docum
 	}
 
 	return spec.Document{
-		Swagger: DocumentSpecVersion,
-		Info: spec.Info{
-			Title:       t.documentTitle(),
-			Description: t.documentDescription(),
-			Version:     strings.TrimSpace(t.Version),
-		},
+		Swagger:  DocumentSpecVersion,
+		Info:     info,
 		Host:     strings.TrimSpace(t.Host),
 		Schemes:  []string{DefaultScheme},
 		Produces: []string{endpointpkg.ApplicationJson},
@@ -231,20 +224,16 @@ func (t Transcriber) routes(routes internalroute.Routes) (internalroute.Routes, 
 	return routes.WithPathPrefix(t.PathPrefix)
 }
 
-func (t Transcriber) documentTitle() string {
-	title := strings.TrimSpace(t.Title)
-	if title == "" {
-		return DefaultDocumentTitle
+func (t Transcriber) documentInfo() spec.Info {
+	info := spec.NormalizeInfo(t.Info)
+	if info.Title == "" {
+		info.Title = DefaultDocumentTitle
 	}
-	return title
-}
+	if info.Description == "" {
+		info.Description = DefaultDocumentDescription
+	}
 
-func (t Transcriber) documentDescription() string {
-	description := strings.TrimSpace(t.Description)
-	if description == "" {
-		return DefaultDocumentDescription
-	}
-	return description
+	return info
 }
 
 func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operation, error) {
@@ -257,9 +246,10 @@ func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operatio
 	operation := spec.Operation{
 		OperationID: defaultOperationID(route.Method, route.Path),
 		Summary:     fmt.Sprintf("%s %s", route.Method, route.Path),
+		Parameters:  parametersForEndpoint(route.Endpoint),
 		Consumes:    contentTypesForOpenAPI(route.Endpoint.AcceptedContentTypes()),
 		Produces:    []string{endpointpkg.ApplicationJson},
-		Responses:   placeholderResponses(),
+		Responses:   responsesForEndpoint(route.Endpoint),
 	}
 	if err := operation.SetExtension(BackendExtensionName, backend); err != nil {
 		return spec.Operation{}, err
@@ -290,10 +280,9 @@ func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operatio
 }
 
 func (t Transcriber) gatewayBackend(backend endpointpkg.RouteBackend) (Backend, error) {
-	backend = backend.WithDefaults(endpointpkg.RouteBackend{
-		Address:  strings.TrimSpace(t.BackendAddress),
+	backend = backend.WithDefaults(t.DefaultBackend.WithDefaults(endpointpkg.RouteBackend{
 		PathMode: endpointpkg.RoutePathModeAppend,
-	})
+	}))
 	backend = endpointpkg.NormalizeRouteBackend(backend)
 	if backend.Address == "" {
 		return Backend{}, ErrBackendAddressRequired
@@ -354,6 +343,60 @@ func placeholderResponses() map[string]spec.Response {
 	return map[string]spec.Response{
 		"default": {Description: PlaceholderResponseDescription},
 	}
+}
+
+func parametersForEndpoint(endpoint endpointpkg.Endpoint) []spec.Parameter {
+	contract := endpoint.RequestContract()
+	if contract.Body.Type == "" {
+		return nil
+	}
+
+	schema := internalschema.FromParamShape(contract.Body)
+	return []spec.Parameter{
+		{
+			In:       "body",
+			Name:     "body",
+			Required: contract.Required,
+			Schema:   &schema,
+		},
+	}
+}
+
+func responsesForEndpoint(endpoint endpointpkg.Endpoint) map[string]spec.Response {
+	contracts := endpoint.ResponseContracts()
+	if len(contracts) == 0 {
+		return placeholderResponses()
+	}
+
+	responses := make(map[string]spec.Response, len(contracts))
+	for _, contract := range contracts {
+		responses[responseStatusCode(contract.Status)] = responseForContract(contract)
+	}
+	return responses
+}
+
+func responseForContract(contract endpointpkg.ResponseContract) spec.Response {
+	response := spec.Response{Description: responseDescription(contract.Description)}
+	if contract.Body.Type != "" {
+		schema := internalschema.FromResponseShape(contract.Body)
+		response.Schema = &schema
+	}
+	return response
+}
+
+func responseStatusCode(status int) string {
+	if status == 0 {
+		return "default"
+	}
+	return fmt.Sprintf("%d", status)
+}
+
+func responseDescription(description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return "Response."
+	}
+	return description
 }
 
 func defaultOperationID(method endpointpkg.HttpMethod, path string) string {

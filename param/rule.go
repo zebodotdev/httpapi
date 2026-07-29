@@ -8,6 +8,7 @@ import (
 type rule interface {
 	apply(Values) *Error
 	names() []string
+	ruleSpec() RuleSpec
 }
 
 type presenceRule struct {
@@ -76,6 +77,17 @@ func (rule presenceRule) apply(values Values) *Error {
 
 func (rule presenceRule) names() []string {
 	return rule.paramNames
+}
+
+func (rule presenceRule) ruleSpec() RuleSpec {
+	rule = normalizePresenceRule(rule)
+	names := make([]string, len(rule.paramNames))
+	copy(names, rule.paramNames)
+	return RuleSpec{
+		Names:      names,
+		MinPresent: rule.minPresent,
+		MaxPresent: rule.maxPresent,
+	}
 }
 
 func (rule presenceRule) visibleNames(values Values) []string {

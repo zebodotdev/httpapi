@@ -82,6 +82,12 @@ type Config struct {
 	// still work when the variable is absent.
 	Port string
 
+	// Description describes the mounted API surface for documentation and route
+	// spec generation. Runtime binding intentionally does not fill these values:
+	// public URLs, document versions, gateway hosts, and default backends are API
+	// contract concerns, not socket-listener concerns.
+	Description Description
+
 	// Mux is the preferred httpapi routing surface. When Handler is nil, New uses
 	// Mux as the base handler. If both Handler and Mux are nil, New creates an
 	// empty endpoint.Mux. Most services should provide a mux, mount endpoint
@@ -136,8 +142,55 @@ type Config struct {
 	MaxHeaderBytes int
 }
 
-// New returns an http.Server with httpapi defaults applied.
-func New(config Config) http.Server {
+// Server is an HTTP server plus the httpapi metadata needed to describe its
+// mounted endpoint surface.
+//
+// Server embeds net/http.Server so existing startup code can call methods such
+// as ListenAndServe directly. Use DescribeOpenAPI31 or DescribeGCPAPIGateway
+// when the same configured server should produce route documents.
+type Server struct {
+	http.Server
+
+	config Config
+	mux    *endpoint.Mux
+}
+
+// New returns a Server with httpapi defaults applied.
+func New(config Config) Server {
+	config = normalizeConfig(config)
+
+	return Server{
+		Server: httpServer(config),
+		config: config,
+		mux:    config.Mux,
+	}
+}
+
+// HTTPServer returns the embedded standard library server.
+func (srv Server) HTTPServer() http.Server {
+	return srv.Server
+}
+
+// Config returns the server configuration used to build srv.
+func (srv Server) Config() Config {
+	return srv.config
+}
+
+// Mux returns the endpoint mux used for route registration and documentation.
+func (srv Server) Mux() *endpoint.Mux {
+	return srv.mux
+}
+
+// MountedEndpoints returns the endpoints mounted on the server's mux.
+func (srv Server) MountedEndpoints() []endpoint.MountedEndpoint {
+	if srv.mux == nil {
+		return nil
+	}
+
+	return srv.mux.MountedEndpoints()
+}
+
+func httpServer(config Config) http.Server {
 	return http.Server{
 		Addr:              Address(config),
 		Handler:           Handler(config),
@@ -151,12 +204,11 @@ func New(config Config) http.Server {
 
 // Handler returns config's base handler wrapped by config's middleware chain.
 func Handler(config Config) http.Handler {
+	config = normalizeConfig(config)
+
 	handler := config.Handler
 	if handler == nil {
 		handler = config.Mux
-	}
-	if handler == nil {
-		handler = endpoint.NewMux()
 	}
 
 	for i := len(config.Middleware) - 1; i >= 0; i-- {
@@ -206,8 +258,16 @@ func ListenAndServe(config Config) error {
 }
 
 // Serve starts srv.
-func Serve(srv http.Server) error {
+func Serve(srv Server) error {
 	return srv.ListenAndServe()
+}
+
+func normalizeConfig(config Config) Config {
+	if config.Handler == nil && config.Mux == nil {
+		config.Mux = endpoint.NewMux()
+	}
+
+	return config
 }
 
 func timeoutOrDefault(value, fallback time.Duration) time.Duration {

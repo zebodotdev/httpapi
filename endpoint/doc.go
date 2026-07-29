@@ -3,8 +3,9 @@
 //
 // DefineEndpoint is the preferred entry point for new endpoints. It collects
 // route, access, caller availability, idempotency, priority, timeout,
-// content-type, and handler configuration into one EndpointSpec so request
-// parsing can remain independent from endpoint expectations.
+// content-type, payload contracts, and handler configuration into one
+// EndpointSpec so request parsing can remain independent from endpoint
+// expectations.
 //
 // Endpoint requirements belong on EndpointSpec. A request.Req only represents a
 // safely parsed incoming HTTP request with caller and session state attached; it
@@ -16,8 +17,9 @@
 // Endpoint metadata is intentionally provider-neutral. RouteSpec describes
 // operation IDs, summaries, backend addresses, path forwarding behavior, and
 // backend timeout intent without embedding a cloud provider's document format.
-// Target transcribers under openapi/* translate that metadata into concrete
-// OpenAPI or gateway documents.
+// RequestContract and ResponseContract describe payloads by reusing param and
+// response shape metadata. Target transcribers under openapi/* translate that
+// metadata into concrete OpenAPI or gateway documents.
 //
 // EndpointGroup applies shared defaults to several endpoints. Group caller
 // availability narrows endpoint availability; it cannot widen an endpoint that

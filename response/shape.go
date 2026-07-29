@@ -47,6 +47,9 @@ type ShapeSpec struct {
 	// Type is the JSON type emitted by the shape.
 	Type Type
 
+	// Format is the optional OpenAPI-compatible format emitted by the shape.
+	Format string
+
 	// Attributes describes object attributes when Type is TypeObject.
 	Attributes []AttributeSpec
 
@@ -64,11 +67,12 @@ type Shape[T any] interface {
 }
 
 type scalarShape[T any] struct {
-	typ Type
+	typ    Type
+	format string
 }
 
 func (shape scalarShape[T]) describeShape() ShapeSpec {
-	return ShapeSpec{Type: shape.typ}
+	return ShapeSpec{Type: shape.typ, Format: shape.format}
 }
 
 func (shape scalarShape[T]) projectShape(_ callerpkg.Caller, value T) any {
@@ -79,13 +83,13 @@ func (shape scalarShape[T]) projectShape(_ callerpkg.Caller, value T) any {
 func String() Shape[string] { return scalarShape[string]{typ: TypeString} }
 
 // Int emits a JSON integer attribute.
-func Int() Shape[int] { return scalarShape[int]{typ: TypeInt} }
+func Int() Shape[int] { return scalarShape[int]{typ: TypeInt, format: "int32"} }
 
 // Int64 emits a JSON integer attribute from an int64 value.
-func Int64() Shape[int64] { return scalarShape[int64]{typ: TypeInt64} }
+func Int64() Shape[int64] { return scalarShape[int64]{typ: TypeInt64, format: "int64"} }
 
 // Float64 emits a JSON number attribute.
-func Float64() Shape[float64] { return scalarShape[float64]{typ: TypeFloat64} }
+func Float64() Shape[float64] { return scalarShape[float64]{typ: TypeFloat64, format: "double"} }
 
 // Bool emits a JSON boolean attribute.
 func Bool() Shape[bool] { return scalarShape[bool]{typ: TypeBool} }
@@ -95,7 +99,7 @@ func Bool() Shape[bool] { return scalarShape[bool]{typ: TypeBool} }
 // The standard JSON encoder formats the value with time.Time's
 // RFC3339-compatible JSON representation. Spec writers can treat this as a
 // string and apply their target's timestamp format convention.
-func Time() Shape[time.Time] { return scalarShape[time.Time]{typ: TypeTime} }
+func Time() Shape[time.Time] { return scalarShape[time.Time]{typ: TypeTime, format: "date-time"} }
 
 // Any emits a JSON attribute without additional shaping.
 //

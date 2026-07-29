@@ -17,6 +17,7 @@ type AcceptedParam interface {
 	paramAvailable(callerpkg.Caller) bool
 	paramPresent(any) bool
 	parseParameter(parseContext, string, jsonObject) (parsedParam, *Error)
+	parameterSpec() ParameterSpec
 	wireType() Type
 }
 

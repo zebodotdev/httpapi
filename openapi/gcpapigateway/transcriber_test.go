@@ -3,17 +3,22 @@ package gcpapigateway
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	endpointpkg "github.com/zebodotdev/httpapi/endpoint"
 	"github.com/zebodotdev/httpapi/openapi/spec"
+	"github.com/zebodotdev/httpapi/param"
+	"github.com/zebodotdev/httpapi/response"
 )
 
 func TestTranscribeEmitsBackendAndDefaultResponse(t *testing.T) {
 	paths, err := Transcriber{
-		BackendAddress: "https://service.example.internal",
+		DefaultBackend: endpointpkg.RouteBackend{
+			Address: "https://service.example.internal",
+		},
 	}.TranscribeEndpoint(endpointpkg.NewEndpoint(
 		endpointpkg.POST,
 		"/internal/sync",
@@ -94,7 +99,9 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 	})
 
 	paths, err := Transcriber{
-		BackendAddress: "https://fallback.example.internal",
+		DefaultBackend: endpointpkg.RouteBackend{
+			Address: "https://fallback.example.internal",
+		},
 	}.TranscribeGroup(group)
 	if err != nil {
 		t.Fatalf("TranscribeGroup() error = %v", err)
@@ -162,9 +169,13 @@ func TestTranscribeRejectsBackendTimeoutAboveGatewayLimit(t *testing.T) {
 
 func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
 	doc, err := Transcriber{
-		Version:        "0.1.0-beta5",
-		Host:           "api.example.gateway.dev",
-		BackendAddress: "https://service.example.internal",
+		Info: spec.Info{
+			Version: "0.1.0-beta5",
+		},
+		Host: "api.example.gateway.dev",
+		DefaultBackend: endpointpkg.RouteBackend{
+			Address: "https://service.example.internal",
+		},
 	}.TranscribeEndpointDocument(
 		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopGCPGatewayHandler),
 	)
@@ -194,12 +205,66 @@ func TestTranscribeDocumentIncludesSwaggerShape(t *testing.T) {
 
 func TestTranscribeDocumentRequiresVersion(t *testing.T) {
 	_, err := Transcriber{
-		BackendAddress: "https://service.example.internal",
+		DefaultBackend: endpointpkg.RouteBackend{
+			Address: "https://service.example.internal",
+		},
 	}.TranscribeEndpointDocument(
 		endpointpkg.NewEndpoint(endpointpkg.POST, "/orders/new", noopGCPGatewayHandler),
 	)
 	if err != ErrDocumentVersionRequired {
 		t.Fatalf("error = %v, want ErrDocumentVersionRequired", err)
+	}
+}
+
+func TestTranscribeUsesEndpointRequestAndResponseContracts(t *testing.T) {
+	paths, err := Transcriber{
+		DefaultBackend: endpointpkg.RouteBackend{
+			Address: "https://service.example.internal",
+		},
+	}.TranscribeEndpoint(endpointpkg.DefineEndpoint(endpointpkg.EndpointSpec{
+		Method:    endpointpkg.POST,
+		Path:      "/orders/new",
+		Handler:   noopGCPGatewayHandler,
+		Request:   endpointpkg.RequestBody(gatewayOrderRequestParser()),
+		Responses: []endpointpkg.ResponseContract{endpointpkg.ResponseBody(http.StatusCreated, "Created order.", gatewayOrderResponseShape())},
+	}))
+	if err != nil {
+		t.Fatalf("TranscribeEndpoint() error = %v", err)
+	}
+
+	operation := paths["/orders/new"].Post
+	if operation == nil {
+		t.Fatal("post operation missing")
+	}
+	if len(operation.Parameters) != 1 {
+		t.Fatalf("parameters = %#v, want one body parameter", operation.Parameters)
+	}
+	bodyParam := operation.Parameters[0]
+	if bodyParam.In != "body" || bodyParam.Name != "body" || !bodyParam.Required {
+		t.Fatalf("body parameter = %#v", bodyParam)
+	}
+	if bodyParam.Schema == nil {
+		t.Fatal("body parameter schema missing")
+	}
+	if bodyParam.Schema.Properties["order_id"].Type != "string" {
+		t.Fatalf("order_id schema = %#v", bodyParam.Schema.Properties["order_id"])
+	}
+	if len(bodyParam.Schema.Required) != 1 || bodyParam.Schema.Required[0] != "order_id" {
+		t.Fatalf("request required = %#v", bodyParam.Schema.Required)
+	}
+
+	created := operation.Responses["201"]
+	if created.Description != "Created order." {
+		t.Fatalf("created response = %#v", created)
+	}
+	if created.Schema == nil {
+		t.Fatal("created response schema missing")
+	}
+	if created.Schema.Properties["id"].Type != "string" {
+		t.Fatalf("id response schema = %#v", created.Schema.Properties["id"])
+	}
+	if created.Schema.Properties["count"].Format != "int64" {
+		t.Fatalf("count response schema = %#v", created.Schema.Properties["count"])
 	}
 }
 
@@ -218,4 +283,34 @@ func operationBackend(t *testing.T, operation spec.Operation) Backend {
 	}
 
 	return backend
+}
+
+type gatewayOrderRequest struct {
+	OrderID string
+}
+
+type gatewayOrderResponse struct {
+	ID    string
+	Count int64
+}
+
+func gatewayOrderRequestParser() *param.Request[gatewayOrderRequest] {
+	return param.JSON[gatewayOrderRequest]().
+		Param(param.Required("order_id", param.String())).
+		Parse(func(values param.Values) (gatewayOrderRequest, error) {
+			return gatewayOrderRequest{
+				OrderID: param.Must[string](values, "order_id"),
+			}, nil
+		})
+}
+
+func gatewayOrderResponseShape() response.Shape[gatewayOrderResponse] {
+	return response.Object[gatewayOrderResponse](
+		response.Required("id", response.String(), func(order gatewayOrderResponse) string {
+			return order.ID
+		}),
+		response.Required("count", response.Int64(), func(order gatewayOrderResponse) int64 {
+			return order.Count
+		}),
+	)
 }

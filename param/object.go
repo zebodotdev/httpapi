@@ -60,11 +60,21 @@ func (shape *ObjectShape[T]) Parse(parser ObjectParser[T]) *ObjectShape[T] {
 }
 
 func (shape *ObjectShape[T]) parseShape(ctx parseContext, path string, raw any) (T, *Error) {
+	if shape == nil || shape.def == nil {
+		panic("httpapi/param: nil object shape")
+	}
 	object, ok := raw.(map[string]any)
 	if !ok {
 		return zeroValue[T](), typeMismatch(path, TypeObject)
 	}
 	return shape.def.parseObject(ctx, path, jsonObject(object))
+}
+
+func (shape *ObjectShape[T]) describeShape() ShapeSpec {
+	if shape == nil || shape.def == nil {
+		panic("httpapi/param: nil object shape")
+	}
+	return shape.def.describeShape()
 }
 
 func (shape *ObjectShape[T]) wireType() Type {
@@ -167,6 +177,26 @@ func (def *objectDef[T]) parseObject(
 		return zeroValue[T](), parserError(pathOrBody(path), err)
 	}
 	return parsed, nil
+}
+
+func (def *objectDef[T]) describeShape() ShapeSpec {
+	def.normalize()
+
+	params := make([]ParameterSpec, 0, len(def.params))
+	for _, parameter := range def.params {
+		params = append(params, parameter.parameterSpec())
+	}
+
+	rules := make([]RuleSpec, 0, len(def.rules))
+	for _, rule := range def.rules {
+		rules = append(rules, rule.ruleSpec())
+	}
+
+	return ShapeSpec{
+		Type:       TypeObject,
+		Parameters: params,
+		Rules:      rules,
+	}
 }
 
 func normalizeRule(r rule) rule {

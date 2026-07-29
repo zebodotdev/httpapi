@@ -51,6 +51,12 @@ type EndpointSpec struct {
 	// and body.
 	Limits EndpointLimitsSpec
 
+	// Request describes the request payload accepted by the endpoint.
+	Request RequestContract
+
+	// Responses describes the response payloads emitted by the endpoint.
+	Responses []ResponseContract
+
 	// TimeoutHandler renders the response when the handler context reaches its
 	// timeout before the endpoint produces a response. When unset, httpapi
 	// renders DefaultEndpointTimeoutHandler.
@@ -127,7 +133,9 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 		limits: endpointLimitsPolicy{
 			limits: normalizeEndpointLimitsSpec(spec.Limits),
 		},
-		authKeys: cloneEndpointAuthKeys(spec.AuthKeys),
+		requestContract:   normalizeRequestContract(spec.Request),
+		responseContracts: normalizeResponseContracts(spec.Responses),
+		authKeys:          cloneEndpointAuthKeys(spec.AuthKeys),
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 // Shape has unexported methods so request parsers can only be composed from the
 // shapes provided by this package.
 type Shape[T any] interface {
+	describeShape() ShapeSpec
 	parseShape(parseContext, string, any) (T, *Error)
 	wireType() Type
 }
@@ -111,6 +112,10 @@ func (shape scalarShape[T]) parseShape(_ parseContext, path string, raw any) (T,
 	return shape.parser(path, raw)
 }
 
+func (shape scalarShape[T]) describeShape() ShapeSpec {
+	return ShapeSpec{Type: shape.typ}
+}
+
 func (shape scalarShape[T]) wireType() Type {
 	return shape.typ
 }
@@ -138,6 +143,10 @@ func (shape arrayShape[T]) parseShape(_ parseContext, path string, raw any) ([]T
 		result = append(result, value)
 	}
 	return result, nil
+}
+
+func (shape arrayShape[T]) describeShape() ShapeSpec {
+	return ShapeSpec{Type: TypeArray, Item: &ShapeSpec{Type: TypeAny}}
 }
 
 func (shape arrayShape[T]) wireType() Type {
@@ -172,6 +181,11 @@ func (shape arrayOfShape[T]) parseShape(ctx parseContext, path string, raw any) 
 		result = append(result, value)
 	}
 	return result, nil
+}
+
+func (shape arrayOfShape[T]) describeShape() ShapeSpec {
+	item := shape.itemShape.describeShape()
+	return ShapeSpec{Type: TypeArray, Item: &item}
 }
 
 func (shape arrayOfShape[T]) wireType() Type {

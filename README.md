@@ -374,6 +374,9 @@ srv := server.New(server.Config{
 srv.ListenAndServe()
 ```
 
+`server.New` returns `server.Server`, which embeds `net/http.Server` and keeps
+the configured `endpoint.Mux` available for whole-server documentation.
+
 Configured CORS runs before the middleware chain, so browser preflight requests
 can complete without entering auth, idempotency, or service middleware. Actual
 requests then enter middleware in declaration order.
@@ -401,6 +404,34 @@ Applications still own service-specific setup: authentication providers,
 runtime adapters, CORS policy choice, observability exporters, and graceful
 shutdown. Use `server.Config.Handler` only when an application needs a fully
 custom handler tree instead of the `endpoint.Mux` path.
+
+Add `server.Config.Description` when the server should generate API documents:
+
+```go
+srv := server.New(server.Config{
+	Mux: mux,
+	Description: server.Description{
+		Title:       "Tasks API",
+		Description: "Task management API.",
+		Version:     "2026-07-28",
+		PathPrefix: "/v1",
+		PublicURLs: []server.PublicURL{{
+			URL:         "https://api.example.com",
+			Description: "Production",
+		}},
+		GatewayHost: "api.example.gateway.dev",
+		DefaultBackend: endpoint.RouteBackend{
+			Address: "https://tasks.example.run.app",
+			PathMode: endpoint.RoutePathModeAppend,
+			Timeout: 15 * time.Second,
+		},
+	},
+})
+```
+
+The listener address and the public API URLs are intentionally separate.
+`Config.Addr`, `Host`, and `Port` describe where the process binds; `Description`
+describes the API contract clients and gateways should see.
 
 ## Service Wiring
 
@@ -462,22 +493,31 @@ store is configured.
 Endpoint metadata is provider-neutral. Target packages decide how to translate
 that metadata.
 
-Public OpenAPI 3.1 documents:
+Prefer describing the configured server when writing documents for a complete
+API surface:
+
+```go
+publicDoc, err := srv.DescribeOpenAPI31()
+if err != nil {
+	return err
+}
+
+gatewayDoc, err := srv.DescribeGCPAPIGateway()
+if err != nil {
+	return err
+}
+```
+
+Direct transcribers remain useful for tests and tooling that intentionally works
+with one endpoint group instead of the whole server:
 
 ```go
 doc, err := openapi31.Transcriber{
-	Version:   "2026-07-28",
-	ServerURL: "https://api.example.com",
-}.TranscribeGroupDocument(group)
-```
-
-GCP API Gateway documents:
-
-```go
-doc, err := gcpapigateway.Transcriber{
-	Version:        "2026-07-28",
-	Host:           "api.example.gateway.dev",
-	BackendAddress: "https://tasks.example.run.app",
+	Info: spec.Info{
+		Title:   "Tasks API",
+		Version: "2026-07-28",
+	},
+	Servers: []spec.Server{{URL: "https://api.example.com"}},
 }.TranscribeGroupDocument(group)
 ```
 
@@ -512,6 +552,7 @@ The root package is doc-only. Application code should import subpackages:
 - `github.com/zebodotdev/httpapi/param`
 - `github.com/zebodotdev/httpapi/request`
 - `github.com/zebodotdev/httpapi/response`
+- `github.com/zebodotdev/httpapi/server`
 - `github.com/zebodotdev/httpapi/openapi/openapi31`
 - `github.com/zebodotdev/httpapi/openapi/gcpapigateway`
 - `github.com/zebodotdev/httpapi/openapi/spec`
