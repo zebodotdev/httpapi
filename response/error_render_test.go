@@ -6,6 +6,7 @@ import (
 
 	callerpkg "github.com/zebodotdev/httpapi/caller"
 	e "github.com/zebodotdev/httpapi/erreur"
+	"github.com/zebodotdev/httpapi/param"
 )
 
 func TestRenderParamErrUsesCustomErrorFields(t *testing.T) {
@@ -32,6 +33,37 @@ func TestRenderParamErrUsesCustomErrorFields(t *testing.T) {
 		t.Fatalf("code = %q", body.Err.Code)
 	}
 	if body.Err.Cause != "service_unavailable" || body.Err.Type != e.TypeTransient || body.Err.FixCode != e.FixCodeRepeatSame {
+		t.Fatalf("unexpected error fields: %#v", body.Err)
+	}
+}
+
+func TestRenderParamErrorUsesStandardErrorFields(t *testing.T) {
+	target := &testTarget{}
+	RenderParamError(target, param.NewError(
+		"customer.email",
+		param.CodeMissing,
+		"`customer.email` is required",
+		nil,
+	))
+
+	if target.res.Status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", target.res.Status, http.StatusBadRequest)
+	}
+
+	body, ok := target.res.Body.(ErrRes)
+	if !ok {
+		t.Fatalf("body = %T, want ErrRes", target.res.Body)
+	}
+	if body.Err.Code != string(param.CodeMissing) {
+		t.Fatalf("code = %q", body.Err.Code)
+	}
+	if body.Err.Message != "`customer.email` is required" {
+		t.Fatalf("message = %q", body.Err.Message)
+	}
+	if body.Err.Detail != "customer.email" {
+		t.Fatalf("detail = %q", body.Err.Detail)
+	}
+	if body.Err.Cause != e.CauseMissingParam || body.Err.Type != e.TypeInvalidParam {
 		t.Fatalf("unexpected error fields: %#v", body.Err)
 	}
 }

@@ -213,6 +213,12 @@ func (parameter *Parameter[T]) parseParameter(
 		}
 	}
 
+	if parameter.required && parameter.shape.wireType() == TypeString {
+		if rawString, ok := raw.(string); ok && strings.TrimSpace(rawString) == "" {
+			return parsedParam{}, missingError(path)
+		}
+	}
+
 	if err := parameter.enforceSize(path, raw); err != nil {
 		return parsedParam{}, err
 	}

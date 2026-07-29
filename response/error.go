@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	e "github.com/zebodotdev/httpapi/erreur"
+	"github.com/zebodotdev/httpapi/param"
 )
 
 // ErrorBody is the standard JSON response body for structured httpapi errors.
@@ -112,6 +113,46 @@ func RenderParamErr(r Target, err *e.ErrInvalidParam) {
 		Code:    code,
 		URL:     e.URLFor(code, typ, cause, fixCode),
 	})
+}
+
+// RenderParamError converts a native param parse error into the standard
+// structured error response format and sets it on the target.
+func RenderParamError(r Target, err *param.Error) {
+	RenderErr(r, ErrorFromParam(err))
+}
+
+// ErrorFromParam converts a native param parse error into the standard
+// structured error model.
+func ErrorFromParam(err *param.Error) *e.Error {
+	if err == nil {
+		return e.Unexpected()
+	}
+
+	status := http.StatusBadRequest
+	code := string(err.Code)
+	if code == "" {
+		code = string(param.CodeInvalid)
+	}
+	cause := e.CauseInvalidParam
+	typ := e.TypeInvalidParam
+	if err.Code == param.CodeInvalidBody {
+		cause = e.CauseInvalidBody
+		typ = e.TypeInvalidRequest
+	}
+	if err.Code == param.CodeMissing || err.Code == param.CodeRequiredChoice {
+		cause = e.CauseMissingParam
+	}
+
+	return &e.Error{
+		Message: err.Message,
+		FixCode: e.FixCodeChangeParams,
+		Detail:  err.Param,
+		Status:  status,
+		Cause:   cause,
+		Type:    typ,
+		Code:    code,
+		URL:     e.URLFor(code, typ, cause, e.FixCodeChangeParams),
+	}
 }
 
 func errorString(err *e.Error, getter func(*e.Error) string) (string, bool) {

@@ -1,0 +1,117 @@
+package endpoint
+
+import (
+	parampkg "github.com/zebodotdev/httpapi/param"
+	responsepkg "github.com/zebodotdev/httpapi/response"
+)
+
+// RequestHandler is an endpoint handler that receives a parsed request body.
+type RequestHandler[T any] func(r *Req, params T)
+
+// JSONEndpointSpec defines an endpoint whose JSON request contract is also its
+// runtime parser.
+type JSONEndpointSpec[T any] struct {
+	// Method is the HTTP method accepted by the endpoint. Empty and unsupported
+	// values panic during endpoint construction.
+	Method HttpMethod
+
+	// Path is the route pattern registered on the Go ServeMux and later exposed
+	// to transcribers.
+	Path string
+
+	// Request is the JSON request parser and documentation contract.
+	Request *parampkg.Request[T]
+
+	// Handler is invoked after Request successfully parses the endpoint request.
+	Handler RequestHandler[T]
+
+	// Accepts is the primary request content type. It defaults to
+	// ApplicationJson.
+	Accepts ContentType
+
+	// AcceptsAny declares additional accepted request content types. Duplicate
+	// entries are removed after normalization.
+	AcceptsAny []ContentType
+
+	// Access declares whether the endpoint is internal, which session kind it
+	// requires, and which application-defined callers may invoke it.
+	Access EndpointAccessSpec
+
+	// Idempotency declares whether successful responses should be reserved and
+	// replayed for repeated idempotency keys.
+	Idempotency EndpointIdempotencySpec
+
+	// Route carries provider-neutral metadata for generated route documents.
+	Route RouteSpec
+
+	// Priority captures the operational importance of the endpoint.
+	Priority EndpointPriority
+
+	// Timeout declares in-process read, handler, and write deadlines for this
+	// endpoint.
+	Timeout EndpointTimeoutSpec
+
+	// Limits declares in-process request limits for this endpoint. MaxRequestBytes
+	// caps the full parsed request envelope, including the request line, headers,
+	// and body.
+	Limits EndpointLimitsSpec
+
+	// Responses describes the response payloads emitted by the endpoint.
+	Responses []ResponseContract
+
+	// TimeoutHandler renders the response when the handler context reaches its
+	// timeout before the endpoint produces a response. When unset, httpapi
+	// renders DefaultEndpointTimeoutHandler.
+	TimeoutHandler EndpointTimeoutHandler
+
+	// AuthKeys is an optional arbitrary key set for service-specific
+	// authorization metadata. httpapi clones the map before storing it.
+	AuthKeys map[string]bool
+}
+
+// HandlerWithRequest parses request with httpapi/param and invokes handler
+// with the parsed request value. Parse errors are rendered with the standard
+// response error envelope.
+func HandlerWithRequest[T any](
+	request *parampkg.Request[T],
+	handler RequestHandler[T],
+) Handler {
+	if request == nil {
+		panic("httpapi: endpoint request parser is required")
+	}
+	if handler == nil {
+		panic("httpapi: endpoint request handler is required")
+	}
+
+	return func(r *Req) {
+		params, err := request.Parse(r)
+		if err != nil {
+			responsepkg.RenderParamError(r, err)
+			return
+		}
+
+		handler(r, params)
+	}
+}
+
+// DefineJSONEndpoint returns an endpoint whose JSON request parser is used for
+// both runtime request parsing and request-body documentation.
+func DefineJSONEndpoint[T any](spec JSONEndpointSpec[T]) Endpoint {
+	return DefineEndpoint(EndpointSpec{
+		Method:         spec.Method,
+		Path:           spec.Path,
+		Handler:        HandlerWithRequest(spec.Request, spec.Handler),
+		Accepts:        spec.Accepts,
+		AcceptsAny:     spec.AcceptsAny,
+		Access:         spec.Access,
+		Idempotency:    spec.Idempotency,
+		Route:          spec.Route,
+		Priority:       spec.Priority,
+		Timeout:        spec.Timeout,
+		Limits:         spec.Limits,
+		Request:        RequestBody(spec.Request),
+		Responses:      spec.Responses,
+		TimeoutHandler: spec.TimeoutHandler,
+		AuthKeys:       spec.AuthKeys,
+	})
+}

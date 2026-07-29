@@ -118,6 +118,22 @@ func TestRequestParseRequiredAndOptionalParameters(t *testing.T) {
 	}
 }
 
+func TestRequestParseRejectsBlankRequiredString(t *testing.T) {
+	request := JSON[string]().
+		Param(Required("name", String())).
+		Parse(func(values Values) (string, error) {
+			return Must[string](values, "name"), nil
+		})
+
+	_, err := request.Parse(`{"name":" \t "}`)
+	if err == nil {
+		t.Fatal("Parse error = nil")
+	}
+	if err.Code != CodeMissing || err.Param != "name" {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestRequestParseStringEnum(t *testing.T) {
 	request := JSON[enumParams]().
 		Param(Required("status", Enum("draft", "active"))).
@@ -355,7 +371,7 @@ func TestDefaultParsersCleanCommonHTTPInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("Parse error = nil")
 	}
-	if err.Code != CodeInvalid || err.Param != "id" || err.Message != "`id` is required" {
+	if err.Code != CodeMissing || err.Param != "id" || err.Message != "`id` is required" {
 		t.Fatalf("error = %#v", err)
 	}
 
