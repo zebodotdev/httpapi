@@ -1,11 +1,29 @@
-// Package endpoint contains provider-neutral endpoint metadata contracts used by
-// httpapi runtime endpoints and spec transcribers.
+// Package endpoint defines httpapi's typed HTTP endpoint runtime and
+// provider-neutral route metadata.
 //
-// DefineEndpoint is the preferred entry point for new endpoints. It collects
-// route, access, caller availability, idempotency, priority, timeout,
-// content-type, payload contracts, and handler configuration into one
-// EndpointSpec so request parsing can remain independent from endpoint
-// expectations.
+// The package is responsible for the HTTP concerns that belong around an
+// application handler: method and content-type checks, request-size limits,
+// authentication and caller availability, idempotency replay, handler timeouts,
+// response writing, completion hooks, and route metadata for generated API
+// documents. Domain validation and business work should stay in application
+// packages; endpoint handlers should parse the request, call that domain code,
+// and render one response.
+//
+// # Defining Endpoints
+//
+// DefineEndpoint is the general entry point for new endpoints. It collects the
+// endpoint's method, path, handler, access policy, idempotency policy, priority,
+// timeout budget, request limit, payload contracts, and RouteSpec in one
+// EndpointSpec. Keeping those requirements on EndpointSpec lets request.Req
+// remain a safe parse of an incoming HTTP request rather than a route-specific
+// contract object.
+//
+// DefineJSONEndpoint is the typed JSON convenience entry point. It binds a
+// param.Request parser to the endpoint, uses the same parser as the request-body
+// contract for documentation, renders param errors with the standard httpapi
+// error envelope, and invokes a typed RequestHandler only after parsing
+// succeeds. Use HandlerWithRequest when an existing EndpointSpec should receive
+// the same typed parsing behavior.
 //
 // Endpoint requirements belong on EndpointSpec. A request.Req only represents a
 // safely parsed incoming HTTP request with caller and session state attached; it
@@ -14,12 +32,36 @@
 // authorization, caller availability, request size limits, idempotency, and
 // timeout policy before or around the handler.
 //
-// Endpoint metadata is intentionally provider-neutral. RouteSpec describes
-// operation IDs, summaries, backend addresses, path forwarding behavior, and
-// backend timeout intent without embedding a cloud provider's document format.
-// RequestContract and ResponseContract describe payloads by reusing param and
-// response shape metadata. Target transcribers under openapi/* translate that
-// metadata into concrete OpenAPI or gateway documents.
+// # Runtime Outcomes
+//
+// The runtime may complete a request before the application handler runs. For
+// example, unsupported methods, unsupported content types, oversized requests,
+// unreadable bodies, missing authorization, denied callers, idempotency
+// conflicts, and handler timeouts are all handled by the endpoint wrapper.
+// Handler panics are recorded for audit and completion observers before being
+// re-panicked, preserving net/http panic behavior.
+//
+// # Completion and Audit Hooks
+//
+// ConfigureAuditSink installs request-audit persistence that receives the
+// completed Req. ConfigureCompletionSink installs a service-owned observer for
+// logging, metrics, notifications, or secondary audit streams. Completion
+// events include endpoint metadata, request metadata, status, duration,
+// response size, a coarse CompletionOutcome, structured httpapi error metadata
+// when available, and panic metadata when a handler panics. Sinks are
+// intentionally package-neutral; services decide how to redact, persist, or
+// route completion events.
+//
+// # Route Metadata and Transcription
+//
+// Endpoint metadata is provider-neutral. RouteSpec describes operation IDs,
+// summaries, backend addresses, path forwarding behavior, and backend timeout
+// intent without embedding a cloud provider's document format. RequestContract
+// and ResponseContract describe payloads by reusing param and response shape
+// metadata. Target transcribers under openapi/* translate that metadata into
+// concrete OpenAPI or gateway documents.
+//
+// # Groups and Muxes
 //
 // EndpointGroup applies shared defaults to several endpoints. Group caller
 // availability narrows endpoint availability; it cannot widen an endpoint that
