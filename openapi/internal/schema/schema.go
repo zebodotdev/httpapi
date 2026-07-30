@@ -66,8 +66,12 @@ func FromResponseShape(shape responsepkg.ShapeSpec) spec.Schema {
 	}
 	switch shape.Type {
 	case responsepkg.TypeObject:
-		schema.Properties = responseProperties(shape.Attributes)
-		schema.Required = responseRequired(shape.Attributes)
+		if shape.MapValue != nil {
+			schema.AdditionalProperties = responseMapValueSchema(shape.MapValue)
+		} else {
+			schema.Properties = responseProperties(shape.Attributes)
+			schema.Required = responseRequired(shape.Attributes)
+		}
 	case responsepkg.TypeArray:
 		schema.Items = responseItemSchema(shape.Item)
 	}
@@ -249,6 +253,15 @@ func responseRequired(attributes []responsepkg.AttributeSpec) []string {
 }
 
 func responseItemSchema(shape *responsepkg.ShapeSpec) *spec.Schema {
+	if shape == nil {
+		schema := spec.Schema{}
+		return &schema
+	}
+	schema := FromResponseShape(*shape)
+	return &schema
+}
+
+func responseMapValueSchema(shape *responsepkg.ShapeSpec) *spec.Schema {
 	if shape == nil {
 		schema := spec.Schema{}
 		return &schema

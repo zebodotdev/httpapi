@@ -55,6 +55,10 @@ type ShapeSpec struct {
 
 	// Item describes array items when Type is TypeArray.
 	Item *ShapeSpec
+
+	// MapValue describes map values when Type is TypeObject and the object has
+	// arbitrary string keys.
+	MapValue *ShapeSpec
 }
 
 // Shape describes the JSON value emitted by a response attribute.
@@ -107,6 +111,35 @@ func Time() Shape[time.Time] { return scalarShape[time.Time]{typ: TypeTime, form
 // blobs such as custom metadata where the service does not promise a fixed
 // object layout.
 func Any[T any]() Shape[T] { return scalarShape[T]{typ: TypeAny} }
+
+// MapOf emits a JSON object with arbitrary string keys and shaped values.
+//
+// MapOf preserves the source map keys and projects each value through
+// valueShape for the active caller. Use it for stable map-shaped contracts
+// where every value has the same response shape.
+func MapOf[V any](valueShape Shape[V]) Shape[map[string]V] {
+	if valueShape == nil {
+		panic("httpapi/response: map value shape is required")
+	}
+	return mapOfShape[V]{valueShape: valueShape}
+}
+
+type mapOfShape[V any] struct {
+	valueShape Shape[V]
+}
+
+func (shape mapOfShape[V]) describeShape() ShapeSpec {
+	value := shape.valueShape.describeShape()
+	return ShapeSpec{Type: TypeObject, MapValue: &value}
+}
+
+func (shape mapOfShape[V]) projectShape(caller callerpkg.Caller, values map[string]V) any {
+	projected := make(map[string]any, len(values))
+	for key, value := range values {
+		projected[key] = shape.valueShape.projectShape(caller, value)
+	}
+	return projected
+}
 
 // Array emits a JSON array whose items do not need caller-aware projection.
 //

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/zebodotdev/httpapi/param"
+	"github.com/zebodotdev/httpapi/response"
 )
 
 func TestFromParamShapeIncludesStringEnum(t *testing.T) {
@@ -129,5 +130,49 @@ func TestFromParamShapeSwagger2DowngradesDiscriminator(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Required, []string{"type"}) {
 		t.Fatalf("required = %#v", got.Required)
+	}
+}
+
+func TestFromResponseShapeIncludesMapAdditionalProperties(t *testing.T) {
+	got := FromResponseShape(response.ShapeSpec{
+		Type: response.TypeObject,
+		MapValue: &response.ShapeSpec{
+			Type: response.TypeObject,
+			Attributes: []response.AttributeSpec{
+				{
+					Name:     "status",
+					Required: true,
+					Shape:    response.ShapeSpec{Type: response.TypeString},
+				},
+				{
+					Name:  "count",
+					Shape: response.ShapeSpec{Type: response.TypeInt},
+				},
+			},
+		},
+	})
+
+	if got.Type != "object" {
+		t.Fatalf("type = %q, want object", got.Type)
+	}
+	if got.AdditionalProperties == nil {
+		t.Fatal("additionalProperties is nil")
+	}
+	if got.Properties != nil || got.Required != nil {
+		t.Fatalf("map schema has fixed object properties: %#v", got)
+	}
+
+	value := got.AdditionalProperties
+	if value.Type != "object" {
+		t.Fatalf("additionalProperties type = %q, want object", value.Type)
+	}
+	if value.Properties["status"].Type != "string" {
+		t.Fatalf("status schema = %#v", value.Properties["status"])
+	}
+	if value.Properties["count"].Type != "integer" {
+		t.Fatalf("count schema = %#v", value.Properties["count"])
+	}
+	if !reflect.DeepEqual(value.Required, []string{"status"}) {
+		t.Fatalf("required = %#v, want status", value.Required)
 	}
 }

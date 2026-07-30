@@ -274,6 +274,9 @@ type Schema struct {
 	// Required lists required object property names.
 	Required []string `json:"required,omitempty" yaml:"required,omitempty"`
 
+	// AdditionalProperties describes values for arbitrary object keys.
+	AdditionalProperties *Schema `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
+
 	// Items describes array items.
 	Items *Schema `json:"items,omitempty" yaml:"items,omitempty"`
 }
