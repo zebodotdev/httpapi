@@ -289,6 +289,9 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 			defer cancelTimeout()
 		}
 		responseSizeBytes := 0
+		completionState := endpointCompletionState{
+			startedAt: startedAt,
+		}
 		req := &Req{
 			AppID:  requestpkg.UnauthorizedAppID,
 			RecdAt: startedAt,
@@ -298,6 +301,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 		defer func() {
 			completedAt := time.Now()
 			panicValue := recover()
+			completionState.panicValue = panicValue
 
 			req.RecdAt = startedAt
 			req.Dur = completedAt.Sub(startedAt)
@@ -310,6 +314,16 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 			if err := currentAuditSink().RecordRequest(auditContext, req); err != nil {
 				logr.Printf(
 					"attempt to record request audit failed"+
+						" request_id=%s error=%v",
+					req.ID,
+					err,
+				)
+			}
+
+			completionState.responseSizeBytes = responseSizeBytes
+			if err := endpoint.completeEndpoint(auditContext, req, completedAt, completionState); err != nil {
+				logr.Printf(
+					"attempt to record endpoint completion failed"+
 						" request_id=%s error=%v",
 					req.ID,
 					err,
@@ -330,6 +344,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 		}()
 
 		if r.Method != endpoint.method {
+			completionState.outcome = CompletionOutcomeMethodNotAllowed
 			responsepkg.RenderErr(req, e.MethodNotAllowed(endpoint.method, r.Method))
 			req.Dur = time.Since(startedAt)
 			written, err := writeRenderedResponse(w, req, timeout)
@@ -347,6 +362,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 
 		ct := ContentType(r.Header.Get(contentTypeHeaderKey))
 		if r.Method != GET && ct != "" && validateEndpointContentType(ct, endpoint.accepts) != nil {
+			completionState.outcome = CompletionOutcomeUnsupportedContentType
 			responsepkg.RenderErr(req, e.UnsupportedContentType(string(ct), joinContentTypes(endpoint.accepts)))
 			req.Dur = time.Since(startedAt)
 			written, err := writeRenderedResponse(w, req, timeout)
@@ -363,6 +379,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 		}
 
 		if limitErr := enforceEndpointRequestLimit(w, r, endpoint.LimitsSpec()); limitErr != nil {
+			completionState.outcome = CompletionOutcomeRequestTooLarge
 			responsepkg.RenderErr(req, limitErr)
 			req.Dur = time.Since(startedAt)
 			written, err := writeRenderedResponse(w, req, timeout)
@@ -384,6 +401,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 			clearEndpointReadBodyDeadline(w, req)
 		}
 		if endpointRequestTooLargeError(parseErr) {
+			completionState.outcome = CompletionOutcomeRequestTooLarge
 			responsepkg.RenderErr(req, e.RequestTooLarge(endpoint.LimitsSpec().MaxRequestBytes))
 			req.Dur = time.Since(startedAt)
 			written, err := writeRenderedResponse(w, req, timeout)
@@ -399,6 +417,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 			return
 		}
 		if parsedReq == nil {
+			completionState.outcome = CompletionOutcomeInvalidRequestBody
 			responsepkg.RenderErr(req, e.InvalidRequestBody())
 			req.Dur = time.Since(startedAt)
 			written, err := writeRenderedResponse(w, req, timeout)
@@ -435,6 +454,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 		}
 
 		if accessErr := endpoint.accessError(req); accessErr != nil {
+			completionState.outcome = CompletionOutcomeAccessDenied
 			responsepkg.RenderErr(req, accessErr)
 		} else {
 			endpointHandler(req)
@@ -442,6 +462,7 @@ func (endpoint Endpoint) httpHandler() http.HandlerFunc {
 
 		if req.Res == nil {
 			if endpointTimedOut(req) {
+				completionState.outcome = CompletionOutcomeTimedOut
 				endpoint.handleTimeout(req)
 			} else {
 				logr.Printf(
