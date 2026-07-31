@@ -28,6 +28,67 @@ func TestFromParamShapeIncludesStringEnum(t *testing.T) {
 	}
 }
 
+func TestFromParamShapeIncludesParameterBounds(t *testing.T) {
+	min := int64(1)
+	max := int64(9)
+	minItems := int64(2)
+	got := FromParamShape(param.ShapeSpec{
+		Type: param.TypeObject,
+		Parameters: []param.ParameterSpec{
+			{
+				Name:    "name",
+				Shape:   param.ShapeSpec{Type: param.TypeString},
+				MinSize: &min,
+				MaxSize: &max,
+			},
+			{
+				Name:    "count",
+				Shape:   param.ShapeSpec{Type: param.TypeInt},
+				MinSize: &min,
+			},
+			{
+				Name: "tags",
+				Shape: param.ShapeSpec{
+					Type: param.TypeArray,
+					Item: &param.ShapeSpec{Type: param.TypeString},
+				},
+				MinItems: &minItems,
+				MaxSize:  &max,
+			},
+			{
+				Name:    "metadata",
+				Shape:   param.ShapeSpec{Type: param.TypeObject},
+				MaxSize: &max,
+			},
+		},
+	})
+
+	name := got.Properties["name"]
+	if name.MinLength == nil || *name.MinLength != 1 ||
+		name.MaxLength == nil || *name.MaxLength != 9 {
+		t.Fatalf("name bounds = %#v", name)
+	}
+	count := got.Properties["count"]
+	if count.Minimum == nil || *count.Minimum != 1 {
+		t.Fatalf("count bounds = %#v", count)
+	}
+	tags := got.Properties["tags"]
+	if tags.MinItems == nil || *tags.MinItems != 2 ||
+		tags.MaxItems == nil || *tags.MaxItems != 9 {
+		t.Fatalf("tags bounds = %#v", tags)
+	}
+	metadata := got.Properties["metadata"]
+	if metadata.MaxProperties == nil || *metadata.MaxProperties != 9 {
+		t.Fatalf("metadata bounds = %#v", metadata)
+	}
+
+	min = 100
+	if *got.Properties["name"].MinLength != 1 ||
+		*got.Properties["count"].Minimum != 1 {
+		t.Fatalf("schema leaked bound pointer mutation: %#v", got.Properties)
+	}
+}
+
 func TestFromParamShapeIncludesDiscriminatorBranches(t *testing.T) {
 	got := FromParamShape(param.ShapeSpec{
 		Type: param.TypeObject,
@@ -80,6 +141,84 @@ func TestFromParamShapeIncludesDiscriminatorBranches(t *testing.T) {
 	fee := got.OneOf[1]
 	if fee.Properties["amount"].Type != "integer" {
 		t.Fatalf("fee amount property = %#v", fee.Properties["amount"])
+	}
+}
+
+func TestFromParamShapeIncludesPresenceRuleComposition(t *testing.T) {
+	got := FromParamShape(param.ShapeSpec{
+		Type: param.TypeObject,
+		Parameters: []param.ParameterSpec{
+			{Name: "product", Shape: param.ShapeSpec{Type: param.TypeObject}},
+			{Name: "product_id", Shape: param.ShapeSpec{Type: param.TypeString}},
+			{Name: "quantity", Required: true, Shape: param.ShapeSpec{Type: param.TypeObject}},
+		},
+		Rules: []param.RuleSpec{{
+			Names:      []string{"product", "product_id"},
+			MinPresent: 1,
+			MaxPresent: 1,
+		}},
+	})
+
+	if !reflect.DeepEqual(got.Required, []string{"quantity"}) {
+		t.Fatalf("required = %#v, want quantity", got.Required)
+	}
+	if len(got.AllOf) != 1 {
+		t.Fatalf("allOf = %#v, want one rule schema", got.AllOf)
+	}
+	oneOf := got.AllOf[0].OneOf
+	if len(oneOf) != 2 {
+		t.Fatalf("oneOf = %#v, want product selector branches", oneOf)
+	}
+	if !reflect.DeepEqual(oneOf[0].Required, []string{"product"}) ||
+		!reflect.DeepEqual(oneOf[1].Required, []string{"product_id"}) {
+		t.Fatalf("oneOf required branches = %#v", oneOf)
+	}
+}
+
+func TestFromParamShapeIncludesAtLeastOneRuleComposition(t *testing.T) {
+	got := FromParamShape(param.ShapeSpec{
+		Type: param.TypeObject,
+		Parameters: []param.ParameterSpec{
+			{Name: "email", Shape: param.ShapeSpec{Type: param.TypeString}},
+			{Name: "phone", Shape: param.ShapeSpec{Type: param.TypeString}},
+		},
+		Rules: []param.RuleSpec{{
+			Names:      []string{"email", "phone"},
+			MinPresent: 1,
+		}},
+	})
+
+	if len(got.AllOf) != 1 {
+		t.Fatalf("allOf = %#v, want one rule schema", got.AllOf)
+	}
+	anyOf := got.AllOf[0].AnyOf
+	if len(anyOf) != 2 {
+		t.Fatalf("anyOf = %#v, want contact selector branches", anyOf)
+	}
+	if !reflect.DeepEqual(anyOf[0].Required, []string{"email"}) ||
+		!reflect.DeepEqual(anyOf[1].Required, []string{"phone"}) {
+		t.Fatalf("anyOf required branches = %#v", anyOf)
+	}
+}
+
+func TestFromParamShapeIncludesAtMostOneRuleComposition(t *testing.T) {
+	got := FromParamShape(param.ShapeSpec{
+		Type: param.TypeObject,
+		Parameters: []param.ParameterSpec{
+			{Name: "single_use", Shape: param.ShapeSpec{Type: param.TypeBool}},
+			{Name: "multi_use", Shape: param.ShapeSpec{Type: param.TypeBool}},
+		},
+		Rules: []param.RuleSpec{{
+			Names:      []string{"single_use", "multi_use"},
+			MaxPresent: 1,
+		}},
+	})
+
+	if len(got.AllOf) != 1 || got.AllOf[0].Not == nil {
+		t.Fatalf("allOf = %#v, want pairwise not rule", got.AllOf)
+	}
+	if !reflect.DeepEqual(got.AllOf[0].Not.Required, []string{"single_use", "multi_use"}) {
+		t.Fatalf("not required = %#v", got.AllOf[0].Not.Required)
 	}
 }
 

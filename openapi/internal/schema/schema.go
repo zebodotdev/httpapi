@@ -23,6 +23,7 @@ func FromParamShape(shape parampkg.ShapeSpec) spec.Schema {
 		} else {
 			schema.Properties = paramProperties(shape.Parameters)
 			schema.Required = paramRequired(shape.Parameters)
+			schema.AllOf = paramRules(shape.Rules)
 		}
 	case parampkg.TypeArray:
 		schema.Items = paramItemSchema(shape.Item)
@@ -132,9 +133,35 @@ func paramPropertiesWith(
 
 	properties := make(map[string]spec.Schema, len(parameters))
 	for _, parameter := range parameters {
-		properties[parameter.Name] = convert(parameter.Shape)
+		properties[parameter.Name] = paramPropertySchema(parameter, convert)
 	}
 	return properties
+}
+
+func paramPropertySchema(
+	parameter parampkg.ParameterSpec,
+	convert func(parampkg.ShapeSpec) spec.Schema,
+) spec.Schema {
+	schema := convert(parameter.Shape)
+	return applyParamBounds(schema, parameter)
+}
+
+func applyParamBounds(schema spec.Schema, parameter parampkg.ParameterSpec) spec.Schema {
+	switch parameter.Shape.Type {
+	case parampkg.TypeString:
+		schema.MinLength = cloneInt64Pointer(parameter.MinSize)
+		schema.MaxLength = cloneInt64Pointer(parameter.MaxSize)
+	case parampkg.TypeInt, parampkg.TypeInt64, parampkg.TypeFloat64:
+		schema.Minimum = cloneInt64Pointer(parameter.MinSize)
+		schema.Maximum = cloneInt64Pointer(parameter.MaxSize)
+	case parampkg.TypeObject:
+		schema.MinProperties = cloneInt64Pointer(parameter.MinSize)
+		schema.MaxProperties = cloneInt64Pointer(parameter.MaxSize)
+	case parampkg.TypeArray:
+		schema.MinItems = cloneFirstInt64Pointer(parameter.MinItems, parameter.MinSize)
+		schema.MaxItems = cloneFirstInt64Pointer(parameter.MaxItems, parameter.MaxSize)
+	}
+	return schema
 }
 
 func paramRequired(parameters []parampkg.ParameterSpec) []string {
@@ -148,6 +175,97 @@ func paramRequired(parameters []parampkg.ParameterSpec) []string {
 		return nil
 	}
 	return required
+}
+
+func cloneFirstInt64Pointer(values ...*int64) *int64 {
+	for _, value := range values {
+		if value != nil {
+			return cloneInt64Pointer(value)
+		}
+	}
+	return nil
+}
+
+func cloneInt64Pointer(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func paramRules(rules []parampkg.RuleSpec) []spec.Schema {
+	if len(rules) == 0 {
+		return nil
+	}
+
+	allOf := make([]spec.Schema, 0, len(rules))
+	for _, rule := range rules {
+		allOf = append(allOf, paramRuleSchemas(rule)...)
+	}
+	if len(allOf) == 0 {
+		return nil
+	}
+	return allOf
+}
+
+func paramRuleSchemas(rule parampkg.RuleSpec) []spec.Schema {
+	if len(rule.Names) == 0 {
+		return nil
+	}
+
+	if rule.MinPresent == 1 && rule.MaxPresent == 1 {
+		return []spec.Schema{{OneOf: requiredNameSchemas(rule.Names, 1)}}
+	}
+
+	schemas := []spec.Schema{}
+	if rule.MinPresent > 0 {
+		schemas = append(schemas, spec.Schema{
+			AnyOf: requiredNameSchemas(rule.Names, rule.MinPresent),
+		})
+	}
+	if rule.MaxPresent > 0 && rule.MaxPresent < len(rule.Names) {
+		for _, names := range nameCombinations(rule.Names, rule.MaxPresent+1) {
+			schemas = append(schemas, spec.Schema{
+				Not: &spec.Schema{Required: names},
+			})
+		}
+	}
+
+	return schemas
+}
+
+func requiredNameSchemas(names []string, count int) []spec.Schema {
+	combinations := nameCombinations(names, count)
+	schemas := make([]spec.Schema, 0, len(combinations))
+	for _, combination := range combinations {
+		schemas = append(schemas, spec.Schema{Required: combination})
+	}
+	return schemas
+}
+
+func nameCombinations(names []string, count int) [][]string {
+	if count <= 0 || count > len(names) {
+		return nil
+	}
+
+	combinations := [][]string{}
+	var walk func(start int, selected []string)
+	walk = func(start int, selected []string) {
+		if len(selected) == count {
+			combination := make([]string, count)
+			copy(combination, selected)
+			combinations = append(combinations, combination)
+			return
+		}
+		remaining := count - len(selected)
+		for i := start; i <= len(names)-remaining; i++ {
+			walk(i+1, append(selected, names[i]))
+		}
+	}
+	walk(0, nil)
+
+	return combinations
 }
 
 func paramItemSchema(shape *parampkg.ShapeSpec) *spec.Schema {

@@ -255,6 +255,30 @@ type Schema struct {
 	// Format is the optional OpenAPI format.
 	Format string `json:"format,omitempty" yaml:"format,omitempty"`
 
+	// Minimum is the inclusive lower numeric bound.
+	Minimum *int64 `json:"minimum,omitempty" yaml:"minimum,omitempty"`
+
+	// Maximum is the inclusive upper numeric bound.
+	Maximum *int64 `json:"maximum,omitempty" yaml:"maximum,omitempty"`
+
+	// MinLength is the inclusive lower character-count bound for strings.
+	MinLength *int64 `json:"minLength,omitempty" yaml:"minLength,omitempty"`
+
+	// MaxLength is the inclusive upper character-count bound for strings.
+	MaxLength *int64 `json:"maxLength,omitempty" yaml:"maxLength,omitempty"`
+
+	// MinProperties is the inclusive lower property-count bound for objects.
+	MinProperties *int64 `json:"minProperties,omitempty" yaml:"minProperties,omitempty"`
+
+	// MaxProperties is the inclusive upper property-count bound for objects.
+	MaxProperties *int64 `json:"maxProperties,omitempty" yaml:"maxProperties,omitempty"`
+
+	// MinItems is the inclusive lower item-count bound for arrays.
+	MinItems *int64 `json:"minItems,omitempty" yaml:"minItems,omitempty"`
+
+	// MaxItems is the inclusive upper item-count bound for arrays.
+	MaxItems *int64 `json:"maxItems,omitempty" yaml:"maxItems,omitempty"`
+
 	// Enum describes the allowed literal values for this schema.
 	Enum []string `json:"enum,omitempty" yaml:"enum,omitempty"`
 
@@ -263,6 +287,18 @@ type Schema struct {
 	// transcribers should downgrade these alternatives before emitting a
 	// gateway document because Swagger 2.0 has no oneOf keyword.
 	OneOf []Schema `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
+
+	// AnyOf describes schemas where at least one alternative must match.
+	AnyOf []Schema `json:"anyOf,omitempty" yaml:"anyOf,omitempty"`
+
+	// AllOf describes schemas where every nested schema must match. Request
+	// presence rules use this to layer object-level constraints over normal
+	// object properties.
+	AllOf []Schema `json:"allOf,omitempty" yaml:"allOf,omitempty"`
+
+	// Not describes a schema that must not match. Swagger 2.0 transcribers
+	// should omit it because Swagger 2.0 does not support not.
+	Not *Schema `json:"not,omitempty" yaml:"not,omitempty"`
 
 	// Discriminator identifies the property that selects one schema from OneOf.
 	// It is primarily used by OpenAPI 3.x documents.
