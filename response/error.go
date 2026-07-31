@@ -53,9 +53,14 @@ var ErrorObjectShape = Object[*e.Error](
 // The response status is derived from the error. When the error has no URL,
 // RenderErr asks the erreur package URL builder for one.
 func RenderErr(r Target, err *e.Error) {
-	if r == nil {
-		return
-	}
+	Render(r, Error(err))
+}
+
+// Error returns a structured error response.
+//
+// The response status is derived from the error. When the error has no URL,
+// Error asks the erreur package URL builder for one.
+func Error(err *e.Error, options ...Option) *Res {
 	if err == nil {
 		err = e.Unexpected()
 	}
@@ -72,15 +77,20 @@ func RenderErr(r Target, err *e.Error) {
 		)
 	}
 
-	Render(r, JSON(status, ErrorBody{Err: &bodyErr}))
+	return JSON(status, ErrorBody{Err: &bodyErr}, options...)
 }
 
 // RenderParamErr converts an ErrInvalidParam into the standard structured
 // error response format and sets it on the target.
 func RenderParamErr(r Target, err *e.ErrInvalidParam) {
+	Render(r, InvalidParamError(err))
+}
+
+// InvalidParamError converts an ErrInvalidParam into the standard structured
+// error response format.
+func InvalidParamError(err *e.ErrInvalidParam, options ...Option) *Res {
 	if err == nil {
-		RenderErr(r, nil)
-		return
+		return Error(nil, options...)
 	}
 
 	status := err.Status
@@ -104,7 +114,7 @@ func RenderParamErr(r Target, err *e.ErrInvalidParam) {
 		fixCode = e.FixCodeChangeParams
 	}
 
-	RenderErr(r, &e.Error{
+	return Error(&e.Error{
 		Message: err.Mesg,
 		FixCode: fixCode,
 		Status:  status,
@@ -112,13 +122,19 @@ func RenderParamErr(r Target, err *e.ErrInvalidParam) {
 		Type:    typ,
 		Code:    code,
 		URL:     e.URLFor(code, typ, cause, fixCode),
-	})
+	}, options...)
 }
 
 // RenderParamError converts a native param parse error into the standard
 // structured error response format and sets it on the target.
 func RenderParamError(r Target, err *param.Error) {
-	RenderErr(r, ErrorFromParam(err))
+	Render(r, ParamError(err))
+}
+
+// ParamError converts a native param parse error into the standard structured
+// error response format.
+func ParamError(err *param.Error, options ...Option) *Res {
+	return Error(ErrorFromParam(err), options...)
 }
 
 // ErrorFromParam converts a native param parse error into the standard

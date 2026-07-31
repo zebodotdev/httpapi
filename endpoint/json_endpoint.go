@@ -8,6 +8,10 @@ import (
 // RequestHandler is an endpoint handler that receives a parsed request body.
 type RequestHandler[T any] func(r *Req, params T)
 
+// RequestResponder is the preferred endpoint responder that receives a parsed
+// request body and returns the response to render.
+type RequestResponder[T any] func(r *Req, params T) *responsepkg.Res
+
 // JSONEndpointSpec defines an endpoint whose JSON request contract is also its
 // runtime parser.
 type JSONEndpointSpec[T any] struct {
@@ -22,8 +26,14 @@ type JSONEndpointSpec[T any] struct {
 	// Request is the JSON request parser and documentation contract.
 	Request *parampkg.Request[T]
 
-	// Handler is invoked after Request successfully parses the endpoint request.
+	// Handler is the compatibility function invoked after Request successfully
+	// parses the endpoint request.
 	Handler RequestHandler[T]
+
+	// Respond is the preferred return-style function invoked after Request
+	// successfully parses the endpoint request. Handler and Respond are mutually
+	// exclusive; endpoint construction panics when both are set.
+	Respond RequestResponder[T]
 
 	// Accepts is the primary request content type. It defaults to
 	// ApplicationJson.
@@ -94,13 +104,37 @@ func HandlerWithRequest[T any](
 	}
 }
 
+// HandlerWithRequestResponder parses request with httpapi/param and invokes
+// responder with the parsed request value. Parse errors are returned through
+// the standard response error envelope.
+func HandlerWithRequestResponder[T any](
+	request *parampkg.Request[T],
+	responder RequestResponder[T],
+) Handler {
+	if request == nil {
+		panic("httpapi: endpoint request parser is required")
+	}
+	if responder == nil {
+		panic("httpapi: endpoint request responder is required")
+	}
+
+	return HandlerFromResponder(func(r *Req) *responsepkg.Res {
+		params, err := request.Parse(r)
+		if err != nil {
+			return responsepkg.ParamError(err)
+		}
+
+		return responder(r, params)
+	})
+}
+
 // DefineJSONEndpoint returns an endpoint whose JSON request parser is used for
 // both runtime request parsing and request-body documentation.
 func DefineJSONEndpoint[T any](spec JSONEndpointSpec[T]) Endpoint {
 	return DefineEndpoint(EndpointSpec{
 		Method:         spec.Method,
 		Path:           spec.Path,
-		Handler:        HandlerWithRequest(spec.Request, spec.Handler),
+		Handler:        handlerFromJSONEndpointSpec(spec),
 		Accepts:        spec.Accepts,
 		AcceptsAny:     spec.AcceptsAny,
 		Access:         spec.Access,
@@ -114,4 +148,15 @@ func DefineJSONEndpoint[T any](spec JSONEndpointSpec[T]) Endpoint {
 		TimeoutHandler: spec.TimeoutHandler,
 		AuthKeys:       spec.AuthKeys,
 	})
+}
+
+func handlerFromJSONEndpointSpec[T any](spec JSONEndpointSpec[T]) Handler {
+	if spec.Handler != nil && spec.Respond != nil {
+		panic("httpapi: json endpoint spec cannot set both Handler and Respond")
+	}
+	if spec.Respond != nil {
+		return HandlerWithRequestResponder(spec.Request, spec.Respond)
+	}
+
+	return HandlerWithRequest(spec.Request, spec.Handler)
 }

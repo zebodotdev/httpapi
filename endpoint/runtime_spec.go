@@ -16,9 +16,16 @@ type EndpointSpec struct {
 	// to transcribers.
 	Path string
 
-	// Handler is the application function invoked after httpapi has parsed the
-	// request, authenticated it, applied access policy, and enforced idempotency.
+	// Handler is the compatibility application function invoked after httpapi
+	// has parsed the request, authenticated it, applied access policy, and
+	// enforced idempotency.
 	Handler Handler
+
+	// Respond is the preferred return-style application function invoked after
+	// httpapi has parsed the request, authenticated it, applied access policy,
+	// and enforced idempotency. Handler and Respond are mutually exclusive;
+	// endpoint construction panics when both are set.
+	Respond Responder
 
 	// Accepts is the primary request content type. It defaults to
 	// ApplicationJson.
@@ -101,9 +108,7 @@ func DefineEndpoint(spec EndpointSpec) Endpoint {
 }
 
 func endpointFromSpec(spec EndpointSpec) Endpoint {
-	if spec.Handler == nil {
-		panic("httpapi: endpoint handler is required")
-	}
+	handler := handlerFromEndpointSpec(spec.Handler, spec.Respond)
 
 	idempotent := spec.Idempotency.Enabled
 	if spec.Idempotency.ScopeResolver != nil {
@@ -114,7 +119,7 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 		method:     normalizeEndpointMethod(spec.Method),
 		pattern:    spec.Path,
 		accepts:    normalizeEndpointContentTypes(spec.Accepts, spec.AcceptsAny...),
-		rawHandler: spec.Handler,
+		rawHandler: handler,
 		idempotent: idempotent,
 		resolver:   spec.Idempotency.ScopeResolver,
 		access: endpointAccessPolicy{
@@ -137,6 +142,20 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 		responseContracts: normalizeResponseContracts(spec.Responses),
 		authKeys:          cloneEndpointAuthKeys(spec.AuthKeys),
 	}
+}
+
+func handlerFromEndpointSpec(handler Handler, responder Responder) Handler {
+	if handler != nil && responder != nil {
+		panic("httpapi: endpoint spec cannot set both Handler and Respond")
+	}
+	if responder != nil {
+		return HandlerFromResponder(responder)
+	}
+	if handler != nil {
+		return handler
+	}
+
+	panic("httpapi: endpoint handler is required")
 }
 
 func defineEndpointWithOptions(spec EndpointSpec, opts ...EndpointOption) Endpoint {

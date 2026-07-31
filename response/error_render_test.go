@@ -68,6 +68,61 @@ func TestRenderParamErrorUsesStandardErrorFields(t *testing.T) {
 	}
 }
 
+func TestErrorConstructorsReturnStandardResponses(t *testing.T) {
+	errRes := Error(
+		e.MethodNotAllowed(http.MethodPost, http.MethodGet),
+		WithHeader("x-error", "method"),
+	)
+	if errRes.Status != http.StatusMethodNotAllowed {
+		t.Fatalf("error status = %d, want %d", errRes.Status, http.StatusMethodNotAllowed)
+	}
+	if errRes.ContentType != ApplicationJson {
+		t.Fatalf("error content type = %q, want %q", errRes.ContentType, ApplicationJson)
+	}
+	if errRes.Header.Get("x-error") != "method" {
+		t.Fatalf("error header = %q, want method", errRes.Header.Get("x-error"))
+	}
+	if body := responseErrorBody(t, errRes); body.Code != "method_not_allowed" {
+		t.Fatalf("error code = %q, want method_not_allowed", body.Code)
+	}
+
+	paramRes := ParamError(param.NewError(
+		"customer.email",
+		param.CodeMissing,
+		"`customer.email` is required",
+		nil,
+	))
+	paramBody := responseErrorBody(t, paramRes)
+	if paramRes.Status != http.StatusBadRequest {
+		t.Fatalf("param status = %d, want %d", paramRes.Status, http.StatusBadRequest)
+	}
+	if paramBody.Code != string(param.CodeMissing) || paramBody.Detail != "customer.email" {
+		t.Fatalf("param error body = %#v", paramBody)
+	}
+	if paramBody.Cause != e.CauseMissingParam || paramBody.Type != e.TypeInvalidParam {
+		t.Fatalf("param error fields = %#v", paramBody)
+	}
+
+	invalidRes := InvalidParamError(&e.ErrInvalidParam{
+		Mesg:    "wrong purpose",
+		Code:    "file_reference_purpose_mismatch",
+		Status:  http.StatusServiceUnavailable,
+		Cause:   "service_unavailable",
+		Type:    e.TypeTransient,
+		FixCode: e.FixCodeRepeatSame,
+	})
+	invalidBody := responseErrorBody(t, invalidRes)
+	if invalidRes.Status != http.StatusServiceUnavailable {
+		t.Fatalf("invalid param status = %d, want %d", invalidRes.Status, http.StatusServiceUnavailable)
+	}
+	if invalidBody.Code != "file_reference_purpose_mismatch" {
+		t.Fatalf("invalid param code = %q", invalidBody.Code)
+	}
+	if invalidBody.Cause != "service_unavailable" || invalidBody.Type != e.TypeTransient || invalidBody.FixCode != e.FixCodeRepeatSame {
+		t.Fatalf("invalid param fields = %#v", invalidBody)
+	}
+}
+
 func TestRenderErrUsesErreurResponseStatus(t *testing.T) {
 	target := &testTarget{}
 	RenderErr(target, e.MethodNotAllowed(http.MethodPost, http.MethodGet))
@@ -128,4 +183,18 @@ func TestErrorShapeDescribesAndProjectsStandardErrorBody(t *testing.T) {
 	if errObject["message"] == nil {
 		t.Fatalf("message missing from projected error: %#v", errObject)
 	}
+}
+
+func responseErrorBody(t *testing.T, res *Res) *e.Error {
+	t.Helper()
+
+	body, ok := res.Body.(ErrRes)
+	if !ok {
+		t.Fatalf("body = %T, want ErrRes", res.Body)
+	}
+	if body.Err == nil {
+		t.Fatal("error body is nil")
+	}
+
+	return body.Err
 }

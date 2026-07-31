@@ -6,24 +6,26 @@
 // authentication and caller availability, idempotency replay, handler timeouts,
 // response writing, completion hooks, and route metadata for generated API
 // documents. Domain validation and business work should stay in application
-// packages; endpoint handlers should parse the request, call that domain code,
-// and render one response.
+// packages; endpoint responders should parse the request, call that domain
+// code, and return one response.
 //
 // # Defining Endpoints
 //
 // DefineEndpoint is the general entry point for new endpoints. It collects the
-// endpoint's method, path, handler, access policy, idempotency policy, priority,
-// timeout budget, request limit, payload contracts, and RouteSpec in one
-// EndpointSpec. Keeping those requirements on EndpointSpec lets request.Req
-// remain a safe parse of an incoming HTTP request rather than a route-specific
-// contract object.
+// endpoint's method, path, responder, access policy, idempotency policy,
+// priority, timeout budget, request limit, payload contracts, and RouteSpec in
+// one EndpointSpec. Respond is the preferred return-style handler; Handler is
+// kept for compatibility with existing render-in-place integrations. Keeping
+// endpoint requirements on EndpointSpec lets request.Req remain a safe parse of
+// an incoming HTTP request rather than a route-specific contract object.
 //
 // DefineJSONEndpoint is the typed JSON convenience entry point. It binds a
 // param.Request parser to the endpoint, uses the same parser as the request-body
 // contract for documentation, renders param errors with the standard httpapi
-// error envelope, and invokes a typed RequestHandler only after parsing
-// succeeds. Use HandlerWithRequest when an existing EndpointSpec should receive
-// the same typed parsing behavior.
+// error envelope, and invokes a typed RequestResponder only after parsing
+// succeeds. Use HandlerWithRequestResponder when an existing EndpointSpec should
+// receive the same typed parsing behavior. HandlerWithRequest remains available
+// for compatibility.
 //
 // Endpoint requirements belong on EndpointSpec. A request.Req only represents a
 // safely parsed incoming HTTP request with caller and session state attached; it

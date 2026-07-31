@@ -15,12 +15,19 @@ import (
 // HttpMethod is the HTTP method type accepted by endpoint constructors.
 type HttpMethod = Method
 
-// Handler is the application handler signature used by httpapi endpoints.
+// Handler is the compatibility application handler signature used by httpapi
+// endpoints.
 //
 // The handler receives a parsed Req and should set exactly one response through
 // response.RenderJSON, response.RenderErr, response.RenderStream, or
 // Req.SetResponse.
 type Handler func(r *Req)
+
+// Responder is the preferred application handler signature used by httpapi
+// endpoints.
+//
+// The responder receives a parsed Req and returns the response to render.
+type Responder func(r *Req) *responsepkg.Res
 
 // Req is the safe request type passed to endpoint handlers.
 type Req = requestpkg.Req
@@ -227,6 +234,31 @@ func NewEndpoint(
 		Path:    pattern,
 		Handler: handler,
 	}, opts...)
+}
+
+// HandlerFromResponder adapts a return-style responder to a compatibility
+// Handler.
+//
+// If responder returns nil after already rendering a response on Req, that
+// response is preserved. If it returns nil without rendering, httpapi renders a
+// standard unexpected-error response.
+func HandlerFromResponder(responder Responder) Handler {
+	if responder == nil {
+		panic("httpapi: endpoint responder is required")
+	}
+
+	return func(r *Req) {
+		res := responder(r)
+		if res != nil {
+			responsepkg.Render(r, res)
+			return
+		}
+		if r != nil && r.Response() != nil {
+			return
+		}
+
+		responsepkg.RenderErr(r, e.Unexpected())
+	}
 }
 
 // NewIdempotentEndpoint returns an endpoint with idempotency enabled.
