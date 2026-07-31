@@ -168,6 +168,36 @@ func TestRequestParseStringEnum(t *testing.T) {
 	}
 }
 
+func TestRequestParseTrimmedStringEnum(t *testing.T) {
+	request := JSON[enumParams]().
+		Param(Required("status", TrimmedEnum("draft", "active"))).
+		Parse(func(values Values) (enumParams, error) {
+			return enumParams{Status: Must[string](values, "status")}, nil
+		})
+
+	got, err := request.Parse(`{"status":" active "}`)
+	if err != nil {
+		t.Fatalf("Parse error = %v", err)
+	}
+	if got.Status != "active" {
+		t.Fatalf("status = %q, want active", got.Status)
+	}
+
+	_, err = request.Parse(`{"status":" archived "}`)
+	if err == nil {
+		t.Fatal("Parse error = nil")
+	}
+	if err.Code != CodeValueNotAllowed || err.Param != "status" {
+		t.Fatalf("error = %#v", err)
+	}
+
+	spec := request.Describe()
+	status := findParameterSpec(t, spec.Body, "status")
+	if !reflect.DeepEqual(status.Shape.Enum, []string{"draft", "active"}) {
+		t.Fatalf("status enum = %#v", status.Shape.Enum)
+	}
+}
+
 func TestParameterParserCanChangeShapeType(t *testing.T) {
 	request := JSON[parsedCustomerID]().
 		Param(Required("customer_id", String()).
@@ -308,6 +338,46 @@ func TestRequestDescribeDiscriminatedObject(t *testing.T) {
 	name := findParameterSpec(t, productShape, "name")
 	if name.Shape.Type != TypeString {
 		t.Fatalf("product name shape = %#v", name.Shape)
+	}
+}
+
+func TestRequestParseRootDiscriminatedObject(t *testing.T) {
+	request := JSONShape(
+		DiscriminatedObject[discriminatedItemParams]("type").
+			Variant("product",
+				Object[discriminatedItemParams]().
+					Param(Required("name", String())).
+					Parse(parseDiscriminatedProduct),
+			).
+			Variant("fee",
+				Object[discriminatedItemParams]().
+					Param(Required("amount", Int())).
+					Parse(parseDiscriminatedFee),
+			),
+	)
+
+	got, err := request.Parse(`{"type":"product","name":"Book"}`)
+	if err != nil {
+		t.Fatalf("Parse product error = %v", err)
+	}
+	if got.Type != "product" || got.Name != "Book" {
+		t.Fatalf("product = %#v", got)
+	}
+
+	_, err = request.Parse(`{"type":"product","name":"Book","amount":120}`)
+	if err == nil {
+		t.Fatal("Parse unexpected field error = nil")
+	}
+	if err.Code != CodeUnexpected || err.Param != "amount" {
+		t.Fatalf("error = %#v, want unexpected amount", err)
+	}
+
+	spec := request.Describe()
+	if spec.Body.Discriminator == nil {
+		t.Fatalf("root discriminator missing: %#v", spec.Body)
+	}
+	if spec.Body.Discriminator.Parameter != "type" {
+		t.Fatalf("discriminator parameter = %q", spec.Body.Discriminator.Parameter)
 	}
 }
 

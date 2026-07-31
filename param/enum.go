@@ -11,13 +11,17 @@ func Enum(values ...string) Shape[string] {
 }
 
 type enumShape struct {
-	values []string
+	values    []string
+	trimInput bool
 }
 
 func (shape enumShape) parseShape(_ parseContext, path string, raw any) (string, *Error) {
 	value, ok := raw.(string)
 	if !ok {
 		return "", typeMismatch(path, TypeString)
+	}
+	if shape.trimInput {
+		value = strings.TrimSpace(value)
 	}
 	if !stringIn(value, shape.values) {
 		return "", valueNotAllowedError(path, value, shape.values)
@@ -34,6 +38,19 @@ func (shape enumShape) describeShape() ShapeSpec {
 
 func (shape enumShape) wireType() Type {
 	return TypeString
+}
+
+// TrimmedEnum accepts JSON string values after trimming leading and trailing
+// whitespace, then validates the resulting value against values.
+//
+// Use TrimmedEnum for request parameters where the API already treats
+// incidental whitespace as input cruft, but the parameter is still a closed
+// string set that should appear as an enum in generated contracts.
+func TrimmedEnum(values ...string) Shape[string] {
+	return enumShape{
+		values:    normalizeEnumValues(values),
+		trimInput: true,
+	}
 }
 
 func valueNotAllowedError(path string, value string, allowed []string) *Error {

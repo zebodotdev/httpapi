@@ -99,8 +99,11 @@ type DiscriminatorVariantSpec struct {
 
 // Describe returns the transcribable description of request.
 func Describe[T any](request *Request[T]) RequestSpec {
-	if request == nil || request.def == nil {
+	if request == nil || (request.def == nil && request.shape == nil) {
 		panic("httpapi/param: nil request parser")
+	}
+	if request.shape != nil {
+		return RequestSpec{Body: request.shape.describeShape()}
 	}
 	return RequestSpec{Body: request.def.describeShape()}
 }

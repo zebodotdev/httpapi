@@ -21,6 +21,23 @@ func JSON[T any]() *JSONBuilder[T] {
 	return &JSONBuilder[T]{def: &objectDef[T]{}}
 }
 
+// JSONShape returns a JSON request parser whose top-level body is parsed by
+// shape.
+//
+// Use JSONShape when the whole request body is already best described by a
+// Shape, such as a DiscriminatedObject whose discriminator lives at the top
+// level. Use JSON when defining a plain object by adding top-level parameters
+// directly.
+func JSONShape[T any](shape Shape[T]) *Request[T] {
+	if shape == nil {
+		panic("httpapi/param: request shape is required")
+	}
+	if shape.wireType() != TypeObject {
+		panic("httpapi/param: top-level JSON request shape must be an object")
+	}
+	return &Request[T]{shape: shape}
+}
+
 // Param adds an accepted top-level request parameter or parameter group.
 func (builder *JSONBuilder[T]) Param(parameter ParamDefinition) *JSONBuilder[T] {
 	builder.def.addParam(parameter)
@@ -63,7 +80,8 @@ func (builder *JSONBuilder[T]) Parse(parser ObjectParser[T]) *Request[T] {
 
 // Request parses JSON request bodies into T.
 type Request[T any] struct {
-	def *objectDef[T]
+	def   *objectDef[T]
+	shape Shape[T]
 }
 
 // Parse parses input into the request's final domain value.
@@ -73,7 +91,7 @@ type Request[T any] struct {
 // request source, Parse reads the buffered request body and automatically
 // carries its caller, context, and request object into Values.
 func (request *Request[T]) Parse(input any, options ...Option) (T, *Error) {
-	if request == nil || request.def == nil {
+	if request == nil || (request.def == nil && request.shape == nil) {
 		panic("httpapi/param: nil request parser")
 	}
 
@@ -84,6 +102,14 @@ func (request *Request[T]) Parse(input any, options ...Option) (T, *Error) {
 	}
 
 	ctx := parseContext{config: newParseConfig(options)}
+	if request.shape != nil {
+		parsed, err := request.shape.parseShape(ctx, "", map[string]any(object))
+		if err != nil {
+			return zeroValue[T](), err
+		}
+		return parsed, nil
+	}
+
 	return request.def.parseObject(ctx, "", object)
 }
 
