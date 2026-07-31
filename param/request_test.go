@@ -542,7 +542,7 @@ func TestRequestParseArrayOfObjectShape(t *testing.T) {
 	}
 }
 
-func TestRequestParseRequiredMutuallyExclusiveGroup(t *testing.T) {
+func TestRequestParseOneOfGroup(t *testing.T) {
 	request := orderRequestParser()
 
 	_, err := request.Parse(`{
@@ -568,6 +568,45 @@ func TestRequestParseRequiredMutuallyExclusiveGroup(t *testing.T) {
 	}
 	if err.Code != CodeMutuallyExclusive {
 		t.Fatalf("error code = %q", err.Code)
+	}
+	if err.Param != "customer_id|customer_data" {
+		t.Fatalf("error param = %q", err.Param)
+	}
+}
+
+func TestRequestParseRequiredMutuallyExclusiveGroup(t *testing.T) {
+	request := JSON[requiredOptionalParams]().
+		Param(MutuallyExclusive(
+			Optional("name", String()),
+			Optional("quantity", Int()),
+		).Required()).
+		Parse(func(values Values) (requiredOptionalParams, error) {
+			quantity, hasQty := Get[int](values, "quantity")
+			return requiredOptionalParams{
+				Name:     Must[string](values, "name"),
+				Quantity: quantity,
+				HasQty:   hasQty,
+			}, nil
+		})
+
+	if _, err := request.Parse(`{"name":"Ada"}`); err != nil {
+		t.Fatalf("Parse name-only error = %v", err)
+	}
+
+	_, err := request.Parse(`{}`)
+	if err == nil {
+		t.Fatal("Parse missing choice error = nil")
+	}
+	if err.Code != CodeRequiredChoice || err.Param != "name|quantity" {
+		t.Fatalf("missing choice error = %#v", err)
+	}
+
+	_, err = request.Parse(`{"name":"Ada","quantity":3}`)
+	if err == nil {
+		t.Fatal("Parse conflicting choice error = nil")
+	}
+	if err.Code != CodeMutuallyExclusive || err.Param != "name|quantity" {
+		t.Fatalf("conflicting choice error = %#v", err)
 	}
 }
 
@@ -905,7 +944,7 @@ func orderRequestParser() *Request[orderParams] {
 			Null(NullRejected).
 			MinItems(1).
 			Parse(parseLineItems)).
-		Param(MutuallyExclusive(
+		Param(OneOf(
 			Optional("customer_id", String()).
 				Parse(parseCustomerID),
 			Optional("customer_data",
@@ -917,7 +956,7 @@ func orderRequestParser() *Request[orderParams] {
 					)).
 					Parse(parseCustomerData),
 			),
-		).Required()).
+		)).
 		Param(Optional("created_from",
 			Object[createdFromParams]().
 				Param(Optional("source", String())).

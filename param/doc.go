@@ -15,10 +15,10 @@
 // value type: for example, a string wire value can become a domain ID, and an
 // array of wire structs can become domain line items.
 //
-// Use MutuallyExclusive or AtLeastOneOf when parameters should be declared
-// together with their presence rule. The group can be passed to Param anywhere a
-// single parameter can be passed. MutuallyExclusive is optional by default; call
-// Required when exactly one of the grouped parameters must be present.
+// Use OneOf, MutuallyExclusive, or AtLeastOneOf when parameters should be
+// declared together with their presence rule. The group can be passed to Param
+// anywhere a single parameter can be passed. OneOf requires exactly one grouped
+// parameter; MutuallyExclusive is optional by default and allows zero or one.
 //
 // Use Enum for string parameters with fixed allowed values. The enum check runs
 // before custom parsers so endpoint code does not need to re-check membership,
@@ -70,7 +70,7 @@
 //			Null(param.NullRejected).
 //			MinItems(1)).
 //		Param(param.Required("mode", param.Enum("payment", "subscription"))).
-//		Param(param.MutuallyExclusive(
+//		Param(param.OneOf(
 //			param.Optional("customer_id", param.String()).
 //				Parse(parseCustomerID),
 //			param.Optional("customer_data",
@@ -82,7 +82,7 @@
 //					)).
 //					Parse(parseCustomerData),
 //			),
-//		).Required()).
+//		)).
 //		Param(param.Optional("created_from",
 //			param.Object[createdFromParams]().
 //				Param(param.Optional("source", param.String())).

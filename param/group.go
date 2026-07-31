@@ -12,6 +12,11 @@ func AtLeastOneOf(parameters ...AcceptedParam) *ParamGroup {
 	return newParamGroup(1, 0, parameters...)
 }
 
+// OneOf declares parameters and requires callers to provide exactly one.
+func OneOf(parameters ...AcceptedParam) *ParamGroup {
+	return newParamGroup(1, 1, parameters...)
+}
+
 // MutuallyExclusive declares parameters that may not be provided together.
 //
 // The group is optional by default: callers may provide none of the parameters
