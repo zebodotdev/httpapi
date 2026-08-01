@@ -274,6 +274,76 @@ Use `response.Object[T]` directly when the handler already has a response view
 value. Use `response.Project(shape, prepare)` when the handler has a domain
 value and the shape should read against a prepared response view.
 
+Use `response.Envelope(...)` when the endpoint only needs to wrap one or more
+already-shaped values under stable top-level keys. This removes endpoint-local
+carrier structs such as `type Response struct { Task *taskView; Err *erreur.Error }`:
+
+```go
+var taskEnvelope = response.Envelope(
+	response.OptionalField("task", taskResponse),
+	response.OptionalField("error", response.ErrorObjectShape),
+)
+
+func created(r response.Target, task *Task) {
+	response.RenderJSON(r, http.StatusCreated, taskEnvelope.Body(
+		response.Field("task", task),
+	))
+}
+
+func failed(r response.Target, err *erreur.Error) {
+	response.RenderJSON(r, err.Status, taskEnvelope.Body(
+		response.Field("error", err),
+	))
+}
+```
+
+An envelope must define at least one accepted field, and each rendered response
+must emit at least one real field for the active caller. Each accepted field
+must have a distinct Go value type. If two JSON fields would otherwise share an
+underlying type, define small named types and use `response.Project` to map each
+named type back to the JSON scalar shape. `OptionalField` values that are nil,
+including typed nil pointers, maps, and slices, are omitted and do not satisfy
+the envelope's non-empty requirement. `RequiredField` describes schema and
+per-field requiredness: a missing or nil required value panics, but callers do
+not need a required field just to make the envelope non-empty. Unexpected fields
+still panic.
+
+`Envelope` also implements `response.Shape`, so it can describe a nested object
+without defining a one-off Go struct:
+
+```go
+type pageNumber int
+type pageSize int
+
+var pageNumberShape = response.Project(
+	response.Int(),
+	func(value pageNumber) int { return int(value) },
+)
+
+var pageSizeShape = response.Project(
+	response.Int(),
+	func(value pageSize) int { return int(value) },
+)
+
+var pageShape = response.Envelope(
+	response.RequiredField("number", pageNumberShape),
+	response.RequiredField("size", pageSizeShape),
+	response.RequiredField("tasks", response.ArrayOf(taskResponse)),
+)
+
+var pageEnvelope = response.Envelope(
+	response.RequiredField("page", pageShape),
+)
+
+response.RenderJSON(r, http.StatusOK, pageEnvelope.Body(
+	response.Field("page", response.Fields(
+		response.Field("number", pageNumber(page.Number)),
+		response.Field("size", pageSize(page.Size)),
+		response.Field("tasks", page.Tasks),
+	)),
+))
+```
+
 ## Endpoint Definitions
 
 Use `endpoint.DefineEndpoint(endpoint.EndpointSpec{...})` for new endpoints.

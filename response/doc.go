@@ -64,4 +64,31 @@
 //
 // Handlers should render shaped responses with shape.Body(value). RenderJSON and
 // WriteResponse project the body for the caller attached to the request target.
+//
+// Use Envelope when the response body is only a top-level object that names one
+// or more already-shaped values. This removes the need for endpoint-local
+// wrapper structs such as type Response struct { Task *taskView }:
+//
+//	var taskEnvelope = response.Envelope(
+//		response.OptionalField("task", taskResponse),
+//		response.OptionalField("error", response.ErrorObjectShape),
+//	)
+//
+//	response.RenderJSON(r, http.StatusOK, taskEnvelope.Body(
+//		response.Field("task", task),
+//	))
+//
+// Envelope is intentionally small: it wraps values under names, applies caller
+// availability, and exposes the same ShapeSpec metadata as Object. Each accepted
+// field must have a distinct Go value type; define small named types and use
+// Project when two JSON fields would otherwise share an underlying scalar type.
+// An envelope must define at least one accepted attribute, and projecting it
+// must emit at least one caller-visible, real field. Optional nil fields are
+// omitted and do not satisfy the envelope's non-empty requirement. RequiredField
+// describes schema and per-field requiredness: a missing or nil required field
+// panics, but RequiredField is not needed merely to make the envelope non-empty.
+// Keep using Object or Project when individual attributes need getters,
+// defaults, redaction, or domain-to-response preparation. Envelope also
+// implements Shape, so it can describe nested object values that do not need
+// their own Go view struct.
 package response
