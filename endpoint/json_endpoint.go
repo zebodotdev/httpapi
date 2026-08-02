@@ -51,7 +51,12 @@ type JSONEndpointSpec[T any] struct {
 	// replayed for repeated idempotency keys.
 	Idempotency EndpointIdempotencySpec
 
-	// Route carries provider-neutral metadata for generated route documents.
+	// Operation carries provider-neutral metadata for generated docs,
+	// completion events, and accounting.
+	Operation OperationSpec
+
+	// Route carries provider-neutral routing/backend metadata for generated
+	// route documents.
 	Route RouteSpec
 
 	// Priority captures the operational importance of the endpoint.
@@ -139,6 +144,7 @@ func DefineJSONEndpoint[T any](spec JSONEndpointSpec[T]) Endpoint {
 		AcceptsAny:     spec.AcceptsAny,
 		Access:         spec.Access,
 		Idempotency:    spec.Idempotency,
+		Operation:      spec.Operation,
 		Route:          spec.Route,
 		Priority:       spec.Priority,
 		Timeout:        spec.Timeout,

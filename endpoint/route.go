@@ -33,34 +33,19 @@ type RouteBackend struct {
 	Timeout time.Duration `json:"-" yaml:"-"`
 }
 
-// RouteSpec describes endpoint route metadata used by spec writers.
+// RouteSpec describes routing/backend metadata used by spec writers.
 type RouteSpec struct {
-	// OperationID identifies one endpoint operation. Group-level defaults do not
-	// inherit this value because operation IDs must remain unique.
-	OperationID string `json:"operation_id,omitempty" yaml:"operation_id,omitempty"`
-
-	// Summary is a short human-readable operation summary for generated specs.
-	Summary string `json:"summary,omitempty" yaml:"summary,omitempty"`
-
 	// Backend describes where gateway-style transcribers should send matching
 	// requests.
 	Backend RouteBackend `json:"backend" yaml:"backend,omitempty"`
 }
 
 // WithDefaults returns a RouteSpec with empty fields filled from defaults.
-//
-// OperationID is never inherited because generated documents require operation
-// IDs to be unique.
 func (spec RouteSpec) WithDefaults(defaults RouteSpec) RouteSpec {
 	defaults = NormalizeRouteSpec(defaults)
 	spec = NormalizeRouteSpec(spec)
 
-	merged := RouteSpec{OperationID: spec.OperationID}
-	if spec.Summary != "" {
-		merged.Summary = spec.Summary
-	} else {
-		merged.Summary = defaults.Summary
-	}
+	merged := RouteSpec{}
 	merged.Backend = spec.Backend.WithDefaults(defaults.Backend)
 
 	return NormalizeRouteSpec(merged)
@@ -85,10 +70,8 @@ func (backend RouteBackend) WithDefaults(defaults RouteBackend) RouteBackend {
 	return NormalizeRouteBackend(merged)
 }
 
-// NormalizeRouteSpec trims route metadata and normalizes its backend.
+// NormalizeRouteSpec normalizes route backend metadata.
 func NormalizeRouteSpec(spec RouteSpec) RouteSpec {
-	spec.OperationID = strings.TrimSpace(spec.OperationID)
-	spec.Summary = strings.TrimSpace(spec.Summary)
 	spec.Backend = NormalizeRouteBackend(spec.Backend)
 
 	return spec

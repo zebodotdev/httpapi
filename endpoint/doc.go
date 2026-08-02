@@ -1,5 +1,5 @@
 // Package endpoint defines httpapi's typed HTTP endpoint runtime and
-// provider-neutral route metadata.
+// provider-neutral operation and route metadata.
 //
 // The package is responsible for the HTTP concerns that belong around an
 // application handler: method and content-type checks, request-size limits,
@@ -13,11 +13,12 @@
 //
 // DefineEndpoint is the general entry point for new endpoints. It collects the
 // endpoint's method, path, responder, access policy, idempotency policy,
-// priority, timeout budget, request limit, payload contracts, and RouteSpec in
-// one EndpointSpec. Respond is the preferred return-style handler; Handler is
-// kept for compatibility with existing render-in-place integrations. Keeping
-// endpoint requirements on EndpointSpec lets request.Req remain a safe parse of
-// an incoming HTTP request rather than a route-specific contract object.
+// priority, timeout budget, request limit, operation metadata, route metadata,
+// payload contracts, and response contracts in one EndpointSpec. Respond is the preferred
+// return-style handler; Handler is kept for compatibility with existing
+// render-in-place integrations. Keeping endpoint requirements on EndpointSpec
+// lets request.Req remain a safe parse of an incoming HTTP request rather than a
+// route-specific contract object.
 //
 // DefineJSONEndpoint is the typed JSON convenience entry point. It binds a
 // param.Request parser to the endpoint, uses the same parser as the request-body
@@ -50,18 +51,21 @@
 // logging, metrics, notifications, or secondary audit streams. Completion
 // events include endpoint metadata, request metadata, status, duration,
 // response size, a coarse CompletionOutcome, structured httpapi error metadata
-// when available, and panic metadata when a handler panics. Sinks are
-// intentionally package-neutral; services decide how to redact, persist, or
-// route completion events.
+// when available, panic metadata when a handler panics, and a provider-neutral
+// cost.OperationEvent containing operation correlation plus any usage units
+// recorded on the request. Sinks are intentionally package-neutral; services
+// decide how to redact, persist, price, reconcile, or route completion events.
 //
 // # Route Metadata and Transcription
 //
-// Endpoint metadata is provider-neutral. RouteSpec describes operation IDs,
-// summaries, backend addresses, path forwarding behavior, and backend timeout
-// intent without embedding a cloud provider's document format. RequestContract
-// and ResponseContract describe payloads by reusing param and response shape
-// metadata. Target transcribers under openapi/* translate that metadata into
-// concrete OpenAPI or gateway documents.
+// Endpoint metadata is provider-neutral. OperationSpec describes operation ID,
+// summary, and accounting metadata. Operation.ID is the shared identity used by
+// OpenAPI, generated docs, completion events, and cost accounting. RouteSpec is
+// routing/backend metadata only: backend addresses, path forwarding behavior,
+// and backend timeout intent without embedding a cloud provider's document
+// format. RequestContract and ResponseContract describe payloads by reusing
+// param and response shape metadata. Target transcribers under openapi/*
+// translate that metadata into concrete OpenAPI or gateway documents.
 //
 // # Groups and Muxes
 //

@@ -25,6 +25,8 @@ Use the narrow package that owns the behavior you need:
 - `caller` defines stable labels for trusted request sources.
 - `request` turns an incoming `*http.Request` into a safe `Req` with buffered
   body, request ID, caller, session, and redacted audit output.
+- `cost` records provider-neutral usage units that completion sinks can price or
+  export outside httpapi.
 - `param` parses JSON request bodies into endpoint-owned domain parameters.
 - `response` builds responses, projects response shapes, filters
   caller-specific attributes, and writes HTTP responses.
@@ -208,6 +210,122 @@ Restricted params deliberately fail as unexpected parameters when sent by a
 caller that cannot use them. That avoids revealing that a hidden parameter
 exists or which caller is allowed to send it.
 
+## Cost Usage
+
+Use `cost` to observe metered usage for a request, job, workflow, activity, or
+provider call without putting pricing policy in httpapi. A usage unit names the
+provider, service, SKU, unit, and exact decimal quantity consumed by an
+operation. It does not contain USD prices, billing accounts, invoices,
+discounts, margins, or reconciliation state.
+
+For HTTP requests, httpapi creates a request operation recorder and attaches it
+to `r.Context()` before authentication and handler code run. Handlers can add
+usage directly to the request:
+
+```go
+err := r.AddCostUsage(cost.NewUsageUnit(
+	"aws",
+	"dynamodb",
+	"put-item",
+	"write-request-unit",
+	cost.Whole(1),
+).WithLabel("table", "orders"))
+if err != nil {
+	response.RenderErr(r, erreur.Unexpected())
+	return
+}
+```
+
+For fractional units, use an exact decimal quantity instead of `float64`:
+
+```go
+quantity := cost.MustDecimal(125, 2) // 1.25
+_ = r.AddCostUnit("gcp", "cloud-run", "cpu", "vcpu-second", quantity)
+```
+
+Lower-level code that only receives context can use the context recorder:
+
+```go
+func loadTask(ctx context.Context, id string) (*Task, error) {
+	if err := cost.RecordUnit(
+		ctx,
+		"aws",
+		"dynamodb",
+		"get-item",
+		"read-request-unit",
+		cost.Whole(1),
+	); err != nil {
+		return nil, err
+	}
+
+	return repo.LoadTask(ctx, id)
+}
+```
+
+Endpoint completion observers receive the final operation event:
+
+```go
+restore := endpoint.ConfigureCompletionSink(endpoint.CompletionSinkFunc(
+	func(ctx context.Context, completion endpoint.Completion) error {
+		event := completion.Cost
+		if event.Empty() {
+			return nil
+		}
+
+		return exportCostUsage(ctx, event)
+	},
+))
+defer restore()
+```
+
+Service-owned sinks decide how to aggregate, price, persist, or export the
+event. The operation metadata contains `operation_id`, `root_operation_id`,
+`parent_operation_id`, `trace_id`, and `causation_request_id` where available,
+so async child work can be correlated with the original request.
+
+Request cost recording is active by default so existing completion sinks keep
+receiving usage when handlers record it. To mark an endpoint as intentionally
+cost-accounted, set `Operation.Accounting` on the endpoint, or on an
+`EndpointGroup` as a default. Set `CostAccountingDisabled` to suppress
+completion cost events for an endpoint. The accounting operation identity is
+`Operation.ID`; if it is empty, endpoint completion falls back to
+`METHOD pattern`.
+
+Background jobs and workflows can start child recorders from an existing
+context, record usage anywhere in their call stack, and flush a final event to a
+durable service-owned sink:
+
+```go
+type operationSink struct{}
+
+func (operationSink) RecordOperation(ctx context.Context, event cost.OperationEvent) error {
+	// Price event.Usage with service policy, persist an estimate keyed by
+	// event.Operation.ID/RootID, and reconcile later against provider invoices.
+	return nil
+}
+
+func runWorkflow(ctx context.Context, workflowID string, sink cost.OperationSink) error {
+	ctx, recorder := cost.StartChild(ctx, cost.Operation{
+		ID:   workflowID,
+		Name: "settle_payouts",
+		Kind: "workflow",
+	})
+	defer recorder.Flush(ctx, sink)
+
+	return executeWorkflow(ctx)
+}
+```
+
+When service code wants to separate estimation from persistence, implement
+`cost.Estimator` and `cost.EstimateSink`. `cost.EstimateEvent` allows a
+downstream estimate to carry `currency` and exact decimal `amount`, but httpapi
+still does not define how that amount is calculated.
+
+`httpapi` does not implement DynamoDB, GCP, AWS price lookup, cloud invoice
+matching, or application pricing policy. Keep labels low-cardinality and do not
+attach request bodies, authorization headers, raw tokens, API keys, or other
+secret material.
+
 ## Responses
 
 Handlers can render ordinary payloads:
@@ -384,9 +502,14 @@ var CreateTask = endpoint.DefineEndpoint(endpoint.EndpointSpec{
 	Limits: endpoint.EndpointLimitsSpec{
 		MaxRequestBytes: 64 << 10,
 	},
+	Operation: endpoint.OperationSpec{
+		ID:      "create_task",
+		Summary: "Create task",
+		Accounting: endpoint.AccountingSpec{
+			Cost: endpoint.CostAccountingEnabled,
+		},
+	},
 	Route: endpoint.RouteSpec{
-		OperationID: "create_task",
-		Summary:     "Create task",
 		Backend: endpoint.RouteBackend{
 			Address:  "https://tasks.example.internal",
 			PathMode: endpoint.RoutePathModeAppend,
@@ -396,9 +519,13 @@ var CreateTask = endpoint.DefineEndpoint(endpoint.EndpointSpec{
 })
 ```
 
-Prefer endpoint-level `Timeout`, `Limits`, `Priority`, `Access`, and `Route`
-metadata over service-local side tables. Transcribers can only produce complete
-documents when the endpoint contract carries the relevant metadata.
+Prefer endpoint-level `Timeout`, `Limits`, `Priority`, `Access`, `Operation`,
+and `Route` metadata over service-local side tables. `Operation.ID` is the
+shared operation identity for OpenAPI, generated docs, completion events, and
+cost accounting; when it is empty, completion cost events fall back to
+`METHOD pattern`. `Route` is routing/backend metadata only. Transcribers can
+only produce complete documents when the endpoint contract carries the relevant
+metadata.
 
 `NewEndpoint`, `NewIdempotentEndpoint`, and
 `NewIdempotentEndpointWithScopeResolver` remain for compatibility. New code
@@ -412,6 +539,12 @@ mux:
 ```go
 group := endpoint.EndpointGroup{
 	PathPrefix: "/v1",
+	Operation: endpoint.OperationSpec{
+		Summary: "Task endpoint",
+		Accounting: endpoint.AccountingSpec{
+			Cost: endpoint.CostAccountingEnabled,
+		},
+	},
 	Route: endpoint.RouteSpec{
 		Backend: endpoint.RouteBackend{
 			Address: "https://tasks.example.internal",
@@ -455,6 +588,9 @@ Use `Mount(...) error` when startup code wants explicit error handling, and
 
 Group availability narrows endpoint availability; it does not widen a restricted
 endpoint. An unrestricted group or endpoint is available to all callers.
+`EndpointGroup.Operation` defaults inherit summary and accounting only;
+`Operation.ID` never inherits because it must be unique for OpenAPI, generated
+docs, completion events, and accounting.
 
 ## Server
 

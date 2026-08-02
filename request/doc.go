@@ -13,6 +13,13 @@
 // handlers can render caller-aware response bodies without passing caller values
 // by hand.
 //
+// NewReq creates a request operation recorder and attaches it to the underlying
+// context before authentication runs. Handlers and helper packages can attach
+// provider-neutral usage units with the Req cost helpers or cost.Record(ctx,
+// usage). Endpoint completion observers receive those units as a
+// cost.OperationEvent; request audit serialization does not price or reconcile
+// them.
+//
 // Req audit serialization is intentionally conservative. Authorization headers,
 // idempotency keys, request bodies, and response bodies are redacted or
 // summarized so services can persist request audit records without leaking

@@ -26,9 +26,14 @@ func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
 		Idempotency: EndpointIdempotencySpec{
 			ScopeResolver: resolver,
 		},
+		Operation: OperationSpec{
+			ID:      " create_order ",
+			Summary: " Create order ",
+			Accounting: AccountingSpec{
+				Cost: " enabled ",
+			},
+		},
 		Route: RouteSpec{
-			OperationID: " create_order ",
-			Summary:     " Create order ",
 			Backend: RouteBackend{
 				Address:  " https://service.example.internal ",
 				PathMode: " constant ",
@@ -69,13 +74,17 @@ func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
 	if auth.Kind != AuthorizationKindService {
 		t.Fatalf("authorization kind = %q, want %q", auth.Kind, AuthorizationKindService)
 	}
+	operation := endpoint.Operation()
+	if operation.ID != "create_order" {
+		t.Fatalf("operation id = %q", operation.ID)
+	}
+	if operation.Summary != "Create order" {
+		t.Fatalf("summary = %q", operation.Summary)
+	}
+	if operation.Accounting.Cost != CostAccountingEnabled {
+		t.Fatalf("operation accounting = %#v, want cost enabled", operation.Accounting)
+	}
 	route := endpoint.RouteSpec()
-	if route.OperationID != "create_order" {
-		t.Fatalf("operation id = %q", route.OperationID)
-	}
-	if route.Summary != "Create order" {
-		t.Fatalf("summary = %q", route.Summary)
-	}
 	if route.Backend.Address != "https://service.example.internal" {
 		t.Fatalf("backend address = %q", route.Backend.Address)
 	}
@@ -84,6 +93,9 @@ func TestDefineEndpointBuildsEndpointFromSpec(t *testing.T) {
 	}
 	if route.Backend.Timeout != 15*time.Second {
 		t.Fatalf("backend timeout = %s", route.Backend.Timeout)
+	}
+	if !endpoint.CostAccountingEnabled() {
+		t.Fatal("endpoint cost accounting was not enabled")
 	}
 	if endpoint.Priority() != EndpointPriorityHigh {
 		t.Fatalf("priority = %q, want %q", endpoint.Priority(), EndpointPriorityHigh)
@@ -119,6 +131,12 @@ func TestDefineEndpointDefaults(t *testing.T) {
 	}
 	if endpoint.IsIdempotent() {
 		t.Fatal("endpoint is unexpectedly idempotent")
+	}
+	if operation := endpoint.Operation(); operation.Accounting.Cost != CostAccountingDefault {
+		t.Fatalf("operation = %#v, want default accounting", operation)
+	}
+	if !endpoint.CostAccountingEnabled() {
+		t.Fatal("default endpoint cost accounting should be enabled")
 	}
 	if endpoint.LimitsSpec() != (EndpointLimitsSpec{}) {
 		t.Fatalf("limits = %#v, want zero value", endpoint.LimitsSpec())
@@ -315,9 +333,11 @@ func TestDefineEndpointContractAccessorsDoNotLeakMutableState(t *testing.T) {
 
 func TestLegacyConstructorsMatchEndpointSpec(t *testing.T) {
 	resolver := func(*Req) (string, *e.ErrInvalidParam) { return "sync", nil }
+	operation := OperationSpec{
+		ID:      "sync_internal",
+		Summary: "Sync internal state",
+	}
 	route := RouteSpec{
-		OperationID: "sync_internal",
-		Summary:     "Sync internal state",
 		Backend: RouteBackend{
 			Address:  "https://service.example.internal",
 			PathMode: RoutePathModeAppend,
@@ -332,6 +352,7 @@ func TestLegacyConstructorsMatchEndpointSpec(t *testing.T) {
 		noopTranscriptionHandler,
 		WithInternal(),
 		WithRequiredAuthorization(AuthorizationKindService),
+		WithOperationSpec(operation),
 		WithRouteSpec(route),
 		WithPriority(EndpointPriorityCritical),
 	)
@@ -347,8 +368,9 @@ func TestLegacyConstructorsMatchEndpointSpec(t *testing.T) {
 			Enabled:       true,
 			ScopeResolver: resolver,
 		},
-		Route:    route,
-		Priority: EndpointPriorityCritical,
+		Operation: operation,
+		Route:     route,
+		Priority:  EndpointPriorityCritical,
 	})
 
 	if legacy.Method() != defined.Method() {
@@ -368,6 +390,9 @@ func TestLegacyConstructorsMatchEndpointSpec(t *testing.T) {
 	}
 	if legacy.Authorization() != defined.Authorization() {
 		t.Fatalf("authorization mismatch: %#v != %#v", legacy.Authorization(), defined.Authorization())
+	}
+	if legacy.Operation() != defined.Operation() {
+		t.Fatalf("operation mismatch: %#v != %#v", legacy.Operation(), defined.Operation())
 	}
 	if legacy.RouteSpec() != defined.RouteSpec() {
 		t.Fatalf("route mismatch: %#v != %#v", legacy.RouteSpec(), defined.RouteSpec())

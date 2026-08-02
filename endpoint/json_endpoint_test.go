@@ -70,9 +70,9 @@ func TestDefineJSONEndpointBindsRuntimeHandlerAndRequestContract(t *testing.T) {
 		Handler: func(r *Req, params typedJSONParams) {
 			response.Render(r, response.JSON(http.StatusOK, params))
 		},
-		Route: RouteSpec{
-			OperationID: "typedEndpoint",
-			Summary:     "Typed endpoint",
+		Operation: OperationSpec{
+			ID:      "typedEndpoint",
+			Summary: "Typed endpoint",
 		},
 	})
 

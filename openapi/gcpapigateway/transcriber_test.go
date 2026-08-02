@@ -79,8 +79,10 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 		endpointpkg.POST,
 		"/lookup",
 		noopGCPGatewayHandler,
+		endpointpkg.WithOperationSpec(endpointpkg.OperationSpec{
+			ID: "lookup_order",
+		}),
 		endpointpkg.WithRouteSpec(endpointpkg.RouteSpec{
-			OperationID: "lookup_order",
 			Backend: endpointpkg.RouteBackend{
 				Address:  "https://lookup.example.internal",
 				PathMode: endpointpkg.RoutePathModeConstant,
@@ -89,9 +91,9 @@ func TestTranscribeUsesRouteSpecBackendAndGroupDefaults(t *testing.T) {
 		}),
 	))
 
-	group.ConfigureRouteSpec(endpointpkg.RouteSpec{
-		OperationID: "orders_group",
-		Summary:     "Orders endpoint",
+	group.ConfigureOperationSpec(endpointpkg.OperationSpec{
+		ID:      "orders_group",
+		Summary: "Orders endpoint",
 	})
 	group.ConfigureRouteBackend(endpointpkg.RouteBackend{
 		Address: "https://tasks.example.internal",

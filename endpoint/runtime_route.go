@@ -1,6 +1,7 @@
 package endpoint
 
-// WithRouteSpec applies provider-neutral route metadata to an endpoint.
+// WithRouteSpec applies provider-neutral routing/backend metadata to an
+// endpoint.
 func WithRouteSpec(spec RouteSpec) EndpointOption {
 	return func(e *Endpoint) {
 		e.route = normalizeRouteSpec(spec)
@@ -19,10 +20,8 @@ func WithRouteBackend(backend RouteBackend) EndpointOption {
 	}
 }
 
-// ConfigureRouteSpec sets default route metadata for endpoints in the group.
-//
-// Endpoint-level metadata overrides these defaults. OperationID is not inherited
-// because it must stay unique per operation.
+// ConfigureRouteSpec sets default routing/backend metadata for endpoints in the
+// group.
 func (eg *EndpointGroup) ConfigureRouteSpec(spec RouteSpec) {
 	eg.Route = normalizeRouteSpec(spec)
 }

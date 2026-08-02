@@ -3,10 +3,12 @@ package endpoint
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	callerpkg "github.com/zebodotdev/httpapi/caller"
+	"github.com/zebodotdev/httpapi/cost"
 	e "github.com/zebodotdev/httpapi/erreur"
 	responsepkg "github.com/zebodotdev/httpapi/response"
 )
@@ -94,6 +96,14 @@ type Completion struct {
 
 	// Panic is populated when the handler panicked.
 	Panic *CompletionPanic
+
+	// Cost is the provider-neutral usage event captured for the completed
+	// operation. It includes request and endpoint metadata plus any usage units
+	// recorded on Request during handling when operation accounting allows cost
+	// accounting. Operation.Name comes from Operation.ID when present, then
+	// falls back to "METHOD pattern". Cost intentionally contains no USD
+	// pricing, invoice, account, discount, or reconciliation policy.
+	Cost cost.OperationEvent
 }
 
 // CompletionEndpoint is a stable endpoint metadata snapshot included in
@@ -106,9 +116,16 @@ type CompletionEndpoint struct {
 	Authorization        AuthorizationRequirement
 	Callers              []callerpkg.Caller
 	Idempotent           bool
+	Operation            OperationSpec
 	Route                RouteSpec
 	Priority             EndpointPriority
 	AuthKeys             map[string]bool
+}
+
+// CostAccountingEnabled reports whether this completion endpoint expected cost
+// usage to be emitted with the completion event.
+func (endpoint CompletionEndpoint) CostAccountingEnabled() bool {
+	return endpoint.Operation.Accounting.CostAccountingEnabled()
 }
 
 // CompletionPanic contains audit-safe panic metadata. Value is the recovered
@@ -205,6 +222,7 @@ func (endpoint Endpoint) completeEndpoint(
 		Error:             completionError(req),
 		Panic:             completionPanic(state.panicValue),
 	}
+	completion.Cost = completionCostEvent(completion)
 
 	return currentCompletionSink().CompleteEndpoint(ctx, completion)
 }
@@ -218,6 +236,7 @@ func (endpoint Endpoint) completionEndpoint() CompletionEndpoint {
 		Authorization:        endpoint.Authorization(),
 		Callers:              endpoint.AvailableCallers(),
 		Idempotent:           endpoint.IsIdempotent(),
+		Operation:            endpoint.Operation(),
 		Route:                endpoint.RouteSpec(),
 		Priority:             endpoint.Priority(),
 		AuthKeys:             endpoint.AuthKeys(),
@@ -289,4 +308,138 @@ func completionPanic(value any) *CompletionPanic {
 		Value: value,
 		Type:  fmt.Sprintf("%T", value),
 	}
+}
+
+func completionCostEvent(completion Completion) cost.OperationEvent {
+	if !completion.Endpoint.CostAccountingEnabled() {
+		return cost.OperationEvent{}
+	}
+
+	req := completion.Request
+	request := cost.RequestMetadata{
+		ID:                completionRequestID(req),
+		ApplicationID:     completionRequestAppID(req),
+		SessionID:         completionRequestSessionID(req),
+		Caller:            completionRequestCaller(req),
+		Method:            completionRequestMethod(req),
+		Path:              completionRequestPath(req),
+		ReceivedAt:        completionReceivedAt(req),
+		CompletedAt:       completion.CompletedAt,
+		Duration:          completion.Duration,
+		Status:            completion.Status,
+		Outcome:           string(completion.Outcome),
+		ResponseSizeBytes: completion.ResponseSizeBytes,
+	}
+	endpointMetadata := cost.EndpointMetadata{
+		Method:      string(completion.Endpoint.Method),
+		Pattern:     completion.Endpoint.Pattern,
+		OperationID: completion.Endpoint.Operation.ID,
+		Summary:     completion.Endpoint.Operation.Summary,
+		Internal:    completion.Endpoint.Internal,
+		Priority:    string(completion.Endpoint.Priority),
+		Idempotent:  completion.Endpoint.Idempotent,
+	}
+
+	event := cost.OperationEvent{
+		Request:    request,
+		Endpoint:   endpointMetadata,
+		Usage:      completionCostUsage(req),
+		RecordedAt: completion.CompletedAt,
+	}
+	if req == nil {
+		return event
+	}
+
+	recorder := req.CostRecorder()
+	if recorder == nil {
+		return event
+	}
+
+	recorder.Complete(completion.CompletedAt)
+	event = recorder.Event(request, endpointMetadata)
+	if event.Operation.Name == "" {
+		event.Operation.Name = completionCostOperationName(completion.Endpoint)
+	}
+	if event.Operation.Kind == "" {
+		event.Operation.Kind = "http_request"
+	}
+	event.RecordedAt = completion.CompletedAt
+	return event
+}
+
+func completionCostOperationName(endpoint CompletionEndpoint) string {
+	if operationID := strings.TrimSpace(endpoint.Operation.ID); operationID != "" {
+		return operationID
+	}
+
+	method := strings.TrimSpace(string(endpoint.Method))
+	pattern := strings.TrimSpace(endpoint.Pattern)
+	switch {
+	case method != "" && pattern != "":
+		return method + " " + pattern
+	case method != "":
+		return method
+	default:
+		return pattern
+	}
+}
+
+func completionRequestID(req *Req) string {
+	if req == nil {
+		return ""
+	}
+	return req.ID
+}
+
+func completionRequestAppID(req *Req) string {
+	if req == nil {
+		return ""
+	}
+	return req.AppID
+}
+
+func completionRequestSessionID(req *Req) string {
+	if req == nil {
+		return ""
+	}
+	return req.SessID
+}
+
+func completionRequestCaller(req *Req) string {
+	if req == nil {
+		return ""
+	}
+	caller := req.RequestCaller()
+	if !caller.Defined() {
+		return ""
+	}
+	return caller.Name()
+}
+
+func completionRequestMethod(req *Req) string {
+	if req == nil || req.Req == nil {
+		return ""
+	}
+	return req.Req.Method
+}
+
+func completionRequestPath(req *Req) string {
+	if req == nil || req.Req == nil || req.Req.URL == nil {
+		return ""
+	}
+	return req.Req.URL.Path
+}
+
+func completionReceivedAt(req *Req) time.Time {
+	if req == nil {
+		return time.Time{}
+	}
+	return req.RecdAt
+}
+
+func completionCostUsage(req *Req) []cost.UsageUnit {
+	if req == nil {
+		return nil
+	}
+	return req.CostUsage()
 }

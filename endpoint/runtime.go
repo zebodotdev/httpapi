@@ -59,6 +59,7 @@ type Endpoint struct {
 	idempotent        bool
 	resolver          IdempotencyScopeResolver
 	access            endpointAccessPolicy
+	operation         endpointOperationPolicy
 	route             RouteSpec
 	priority          endpointPriorityPolicy
 	timeout           endpointTimeoutPolicy
@@ -103,7 +104,8 @@ func (e Endpoint) Authorization() AuthorizationRequirement {
 // authenticated session before its handler may run.
 func (e Endpoint) RequiresAuthorization() bool { return e.Authorization().Required }
 
-// RouteSpec returns provider-neutral route metadata for spec transcribers.
+// RouteSpec returns provider-neutral routing/backend metadata for spec
+// transcribers.
 func (e Endpoint) RouteSpec() RouteSpec { return e.routeSpec() }
 
 // Priority returns the normalized operational priority for the endpoint.
@@ -149,9 +151,14 @@ type EndpointGroup struct {
 	// caller.
 	Callers []callerpkg.Caller
 
-	// Route is the default route metadata inherited by endpoint RouteSpec
-	// values. OperationID is intentionally not inherited because it must be
-	// unique per operation.
+	// Operation is the default operation metadata inherited by endpoints.
+	// Operation.ID is intentionally not inherited because it must be unique per
+	// operation. Summary and Accounting inherit when the endpoint leaves them
+	// unset.
+	Operation OperationSpec
+
+	// Route is the default routing/backend metadata inherited by endpoint
+	// RouteSpec values.
 	Route RouteSpec
 
 	// Priority is the default operational priority inherited by endpoints
@@ -181,7 +188,7 @@ func (eg EndpointGroup) Authorization() AuthorizationRequirement {
 // authentication.
 func (eg EndpointGroup) RequiresAuthorization() bool { return eg.Auth.Required }
 
-// RouteSpec returns the group's default route metadata.
+// RouteSpec returns the group's default routing/backend metadata.
 func (eg EndpointGroup) RouteSpec() RouteSpec { return eg.Route }
 
 // ResolvedEndpoints returns endpoints with group-level metadata applied.

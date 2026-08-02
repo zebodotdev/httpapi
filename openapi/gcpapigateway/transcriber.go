@@ -238,6 +238,7 @@ func (t Transcriber) documentInfo() spec.Info {
 
 func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operation, error) {
 	routeSpec := route.Endpoint.RouteSpec()
+	operationSpec := route.Endpoint.Operation()
 	backend, err := t.gatewayBackend(routeSpec.Backend)
 	if err != nil {
 		return spec.Operation{}, err
@@ -254,11 +255,11 @@ func (t Transcriber) operationForRoute(route internalroute.Route) (spec.Operatio
 	if err := operation.SetExtension(BackendExtensionName, backend); err != nil {
 		return spec.Operation{}, err
 	}
-	if routeSpec.OperationID != "" {
-		operation.OperationID = routeSpec.OperationID
+	if operationSpec.ID != "" {
+		operation.OperationID = operationSpec.ID
 	}
-	if routeSpec.Summary != "" {
-		operation.Summary = routeSpec.Summary
+	if operationSpec.Summary != "" {
+		operation.Summary = operationSpec.Summary
 	}
 	if route.Endpoint.IsInternal() {
 		if err := operation.SetExtension(HTTPAPIInternalExtensionName, true); err != nil {

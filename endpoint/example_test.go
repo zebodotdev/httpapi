@@ -23,9 +23,9 @@ func ExampleDefineEndpoint() {
 				"id": "task_123",
 			})
 		},
-		Route: endpoint.RouteSpec{
-			OperationID: "createTask",
-			Summary:     "Create a task",
+		Operation: endpoint.OperationSpec{
+			ID:      "createTask",
+			Summary: "Create a task",
 		},
 		Priority: endpoint.EndpointPriorityHigh,
 		Timeout: endpoint.EndpointTimeoutSpec{
@@ -59,9 +59,9 @@ func ExampleDefineJSONEndpoint() {
 				"name": input.Name,
 			})
 		},
-		Route: endpoint.RouteSpec{
-			OperationID: "createTask",
-			Summary:     "Create a task",
+		Operation: endpoint.OperationSpec{
+			ID:      "createTask",
+			Summary: "Create a task",
 		},
 	})
 
@@ -75,9 +75,9 @@ func ExampleNewMux() {
 		Handler: func(r *endpoint.Req) {
 			response.RenderNoContent(r)
 		},
-		Route: endpoint.RouteSpec{
-			OperationID: "createTask",
-			Summary:     "Create a task",
+		Operation: endpoint.OperationSpec{
+			ID:      "createTask",
+			Summary: "Create a task",
 		},
 	})
 
@@ -89,9 +89,9 @@ func ExampleNewMux() {
 				"id": "task_123",
 			})
 		},
-		Route: endpoint.RouteSpec{
-			OperationID: "lookupTask",
-			Summary:     "Look up a task",
+		Operation: endpoint.OperationSpec{
+			ID:      "lookupTask",
+			Summary: "Look up a task",
 		},
 	})
 
@@ -121,7 +121,7 @@ func ExampleConfigureCompletionSink() {
 	restore := endpoint.ConfigureCompletionSink(endpoint.CompletionSinkFunc(
 		func(ctx context.Context, completion endpoint.Completion) error {
 			_ = ctx
-			_ = completion.Endpoint.Route.OperationID
+			_ = completion.Endpoint.Operation.ID
 			_ = completion.Status
 			_ = completion.Duration
 			_ = completion.Outcome

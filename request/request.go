@@ -16,6 +16,7 @@ import (
 	"time"
 
 	authpkg "github.com/zebodotdev/httpapi/auth"
+	"github.com/zebodotdev/httpapi/cost"
 	e "github.com/zebodotdev/httpapi/erreur"
 	"github.com/zebodotdev/httpapi/response"
 )
@@ -118,6 +119,8 @@ type Req struct {
 	// AuthorizationFailure records endpoint access-policy failure details for
 	// audit output.
 	AuthorizationFailure *AuthFailure `json:"authorization_failure,omitempty"`
+
+	costRecorder *cost.Recorder
 }
 
 // Res is the response type produced by request handlers.
@@ -192,11 +195,18 @@ func (r Req) MarshalJSON() ([]byte, error) {
 // Context returns the underlying request context or context.Background when the
 // Req is nil or not backed by an http.Request.
 func (r *Req) Context() context.Context {
-	if r == nil || r.Req == nil {
+	if r == nil {
 		return context.Background()
 	}
+	if r.Req == nil {
+		return cost.ContextWithRecorder(context.Background(), r.costRecorder)
+	}
 
-	return r.Req.Context()
+	ctx := r.Req.Context()
+	if r.costRecorder != nil && cost.RecorderFromContext(ctx) == nil {
+		return cost.ContextWithRecorder(ctx, r.costRecorder)
+	}
+	return ctx
 }
 
 // RequestAudit is the redacted HTTP request shape embedded in Req audit JSON.
@@ -468,6 +478,143 @@ func (r *Req) RequestBody() []byte {
 	return r.Body
 }
 
+// AddCostUsage records one provider-neutral usage unit for the request.
+//
+// AddCostUsage is intended for request handlers and helper packages that
+// perform metered work while serving the request. The request owns the
+// underlying recorder so endpoint authors do not have to thread a separate
+// collector through domain calls that already receive *request.Req,
+// *endpoint.Req, or context.Context. The endpoint completion event includes the
+// final usage snapshot for service-owned cost sinks.
+func (r *Req) AddCostUsage(usage cost.UsageUnit) error {
+	if r == nil {
+		return fmt.Errorf("httpapi/request: cannot add cost usage to nil request")
+	}
+	return r.ensureCostRecorder().Record(usage)
+}
+
+// AddCostUnit records one provider-neutral usage unit from its required
+// fields.
+//
+// AddCostUnit is a compact convenience around AddCostUsage for common cases
+// where the caller does not need labels or a custom observation timestamp.
+func (r *Req) AddCostUnit(
+	provider cost.Provider,
+	service cost.Service,
+	sku cost.SKU,
+	unit cost.Unit,
+	quantity cost.Quantity,
+) error {
+	if r == nil {
+		return fmt.Errorf("httpapi/request: cannot add cost usage to nil request")
+	}
+	return r.ensureCostRecorder().AddUnit(provider, service, sku, unit, quantity)
+}
+
+// CostUsage returns a copy of the usage units recorded for the request.
+//
+// The returned slice and label maps are safe for callers to modify. Mutating
+// them does not change the request's captured usage.
+func (r *Req) CostUsage() []cost.UsageUnit {
+	if r == nil || r.costRecorder == nil {
+		return nil
+	}
+	return r.costRecorder.Usage()
+}
+
+// CostRecorder returns the request operation recorder, creating and attaching
+// one when needed.
+func (r *Req) CostRecorder() *cost.Recorder {
+	if r == nil {
+		return nil
+	}
+	return r.ensureCostRecorder()
+}
+
+func (r *Req) ensureCostRecorder() *cost.Recorder {
+	if r.costRecorder != nil {
+		return r.costRecorder
+	}
+
+	operation := r.defaultCostOperation()
+	recorder := cost.NewRecorder(operation)
+	if r.Req != nil {
+		if parent := cost.RecorderFromContext(r.Req.Context()); parent != nil {
+			recorder = cost.NewChildRecorder(parent, operation)
+		}
+		r.Req = r.Req.WithContext(cost.ContextWithRecorder(r.Req.Context(), recorder))
+	}
+	r.costRecorder = recorder
+	return r.costRecorder
+}
+
+func (r *Req) defaultCostOperation() cost.Operation {
+	operationID := strings.TrimSpace(r.ID)
+	if operationID == "" {
+		operationID = cost.NewOperationID()
+	}
+
+	startedAt := r.RecdAt
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+
+	return cost.Operation{
+		ID:                 operationID,
+		RootID:             operationID,
+		TraceID:            traceIDFromRequest(r.Req),
+		CausationRequestID: causationRequestID(r.Req, operationID),
+		Kind:               "http_request",
+		StartedAt:          startedAt,
+	}
+}
+
+func causationRequestID(req *http.Request, fallback string) string {
+	if req == nil {
+		return fallback
+	}
+	if requestID := strings.TrimSpace(req.Header.Get(xReqIDHeaderKey)); requestID != "" {
+		return requestID
+	}
+	return fallback
+}
+
+func traceIDFromRequest(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	return traceIDFromTraceparent(req.Header.Get(traceParentHeaderKey))
+}
+
+func traceIDFromTraceparent(value string) string {
+	parts := strings.Split(strings.TrimSpace(value), "-")
+	if len(parts) < 4 {
+		return ""
+	}
+	traceID := strings.ToLower(parts[1])
+	if !validTraceID(traceID) {
+		return ""
+	}
+	return traceID
+}
+
+func validTraceID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+
+	allZero := true
+	for _, r := range value {
+		if r != '0' {
+			allZero = false
+		}
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return !allZero
+}
+
 // Errored reports whether a structured error has been attached to the request.
 func (r *Req) Errored() bool { return r.Err != nil }
 
@@ -624,6 +771,7 @@ func NewReqWithError(req *http.Request) (*Req, error) {
 		Body:   body,
 		ID:     genReqID(),
 	}
+	r.ensureCostRecorder()
 	if session := SessionFromContext(req.Context()); session != nil {
 		r.AttachSession(session)
 	}

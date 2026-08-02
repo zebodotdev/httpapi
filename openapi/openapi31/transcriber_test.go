@@ -21,9 +21,11 @@ func TestTranscribeSkipsInternalRoutesAndEmitsMetadata(t *testing.T) {
 		noopOpenAPI31Handler,
 		endpointpkg.WithRequiredAuthorization(endpointpkg.AuthorizationKindBearer),
 		endpointpkg.WithPriority(endpointpkg.EndpointPriorityHigh),
+		endpointpkg.WithOperationSpec(endpointpkg.OperationSpec{
+			ID:      "public_operation",
+			Summary: "Public operation",
+		}),
 		endpointpkg.WithRouteSpec(endpointpkg.RouteSpec{
-			OperationID: "public_operation",
-			Summary:     "Public operation",
 			Backend: endpointpkg.RouteBackend{
 				Address: "https://service.example.internal",
 			},

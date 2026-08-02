@@ -43,7 +43,12 @@ type EndpointSpec struct {
 	// replayed for repeated idempotency keys.
 	Idempotency EndpointIdempotencySpec
 
-	// Route carries provider-neutral metadata for generated route documents.
+	// Operation carries provider-neutral metadata for generated docs,
+	// completion events, and accounting.
+	Operation OperationSpec
+
+	// Route carries provider-neutral routing/backend metadata for generated
+	// route documents.
 	Route RouteSpec
 
 	// Priority captures the operational importance of the endpoint.
@@ -102,7 +107,8 @@ type EndpointIdempotencySpec struct {
 // DefineEndpoint returns a server endpoint from a declarative endpoint spec.
 //
 // Prefer DefineEndpoint for new code because all runtime, access,
-// idempotency, priority, timeout, and route metadata lives in one named struct.
+// idempotency, priority, timeout, operation, and route metadata live in one
+// named struct.
 func DefineEndpoint(spec EndpointSpec) Endpoint {
 	return endpointFromSpec(spec).withRebuiltHandler()
 }
@@ -126,6 +132,9 @@ func endpointFromSpec(spec EndpointSpec) Endpoint {
 			internal: spec.Access.Internal,
 			auth:     normalizeAuthorizationRequirement(spec.Access.Authorization),
 			callers:  callerpkg.SetOf(spec.Access.Callers...),
+		},
+		operation: endpointOperationPolicy{
+			operation: normalizeEndpointOperationSpec(spec.Operation),
 		},
 		route: normalizeRouteSpec(spec.Route),
 		priority: endpointPriorityPolicy{

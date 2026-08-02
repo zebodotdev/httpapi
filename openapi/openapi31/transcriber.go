@@ -192,18 +192,18 @@ func (t Transcriber) documentServers() []spec.Server {
 }
 
 func operationForRoute(route internalroute.Route) (spec.Operation, error) {
-	routeSpec := route.Endpoint.RouteSpec()
+	operationSpec := route.Endpoint.Operation()
 	operation := spec.Operation{
 		OperationID: defaultOperationID(route.Method, route.Path),
 		Summary:     fmt.Sprintf("%s %s", route.Method, route.Path),
 		RequestBody: requestBodyForEndpoint(route.Endpoint),
 		Responses:   responsesForEndpoint(route.Endpoint),
 	}
-	if routeSpec.OperationID != "" {
-		operation.OperationID = routeSpec.OperationID
+	if operationSpec.ID != "" {
+		operation.OperationID = operationSpec.ID
 	}
-	if routeSpec.Summary != "" {
-		operation.Summary = routeSpec.Summary
+	if operationSpec.Summary != "" {
+		operation.Summary = operationSpec.Summary
 	}
 	if auth := route.Endpoint.Authorization(); auth.Required {
 		if err := operation.SetExtension(HTTPAPIAuthorizationExtensionName, auth); err != nil {
