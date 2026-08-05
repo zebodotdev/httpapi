@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -223,6 +224,19 @@ func handleIdempotently(
 		responsepkg.RenderParamErr(r, perr)
 		return
 	}
+
+	sanitizedBody, err := requestBodyWithoutMeta(r.Body)
+	if err != nil {
+		logr.Printf(
+			"idempotency request body normalization failed:"+
+				" request_id=%s error=%v",
+			r.ID,
+			err,
+		)
+		responsepkg.RenderParamErr(r, e.InvalidBodyErr())
+		return
+	}
+	r.Body = sanitizedBody
 
 	store := currentIdempotencyStore()
 	now := time.Now().UTC()
@@ -485,6 +499,23 @@ func canonicalOperationFingerprint(body []byte) (string, *e.ErrInvalidParam) {
 
 	sum := sha256.Sum256(canon)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func requestBodyWithoutMeta(body []byte) ([]byte, error) {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return body, nil
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if _, ok := payload["request_meta"]; !ok {
+		return body, nil
+	}
+
+	delete(payload, "request_meta")
+	return json.Marshal(payload)
 }
 
 func replayOrRejectIdempotentRequest(r *Req, existing *IdempotencyRecord, incoming *idempotencyRequest) {
