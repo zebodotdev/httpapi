@@ -59,3 +59,31 @@ func TestNewReqUsesContextSession(t *testing.T) {
 		t.Fatalf("app id = %q, want app_context", wrapped.AppID)
 	}
 }
+
+type contextAnnotatorTestKey struct{}
+
+func TestNewReqRunsContextAnnotatorAfterSessionResolution(t *testing.T) {
+	restoreAnnotator := ConfigureContextAnnotator(ContextAnnotatorFunc(
+		func(ctx context.Context, req *Req) context.Context {
+			if req.ID == "" {
+				t.Fatal("annotator saw empty request id")
+			}
+			if req.AppID != "app_context" {
+				t.Fatalf("annotator app id = %q, want app_context", req.AppID)
+			}
+			return context.WithValue(ctx, contextAnnotatorTestKey{}, req.ID)
+		},
+	))
+	t.Cleanup(restoreAnnotator)
+
+	req := httptest.NewRequest(http.MethodPost, "/context", nil)
+	req = req.WithContext(ContextWithAuthenticatedApp(req.Context(), "app_context"))
+
+	wrapped := NewReq(req)
+	if wrapped == nil {
+		t.Fatal("NewReq returned nil")
+	}
+	if got := wrapped.Context().Value(contextAnnotatorTestKey{}); got != wrapped.ID {
+		t.Fatalf("annotated request id = %v, want %s", got, wrapped.ID)
+	}
+}

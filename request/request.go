@@ -780,6 +780,7 @@ func NewReqWithError(req *http.Request) (*Req, error) {
 	}
 
 	if r.Sess != nil {
+		r.annotateContext()
 		return &r, nil
 	}
 
@@ -817,6 +818,7 @@ func NewReqWithError(req *http.Request) (*Req, error) {
 		}
 	}
 
+	r.annotateContext()
 	return &r, nil
 }
 
